@@ -19,3 +19,7 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# Prevent R8/ProGuard from stripping out the SUNMI SDK classes
+-keep class com.sunmi.externalprinterlibrary2.** { *; }
+-dontwarn com.sunmi.externalprinterlibrary2.**
