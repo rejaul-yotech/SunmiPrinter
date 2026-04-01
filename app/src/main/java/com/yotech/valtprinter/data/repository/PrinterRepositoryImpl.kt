@@ -70,11 +70,8 @@ class PrinterRepositoryImpl @Inject constructor(
         searchMethods.forEach { method ->
             try {
                 SunmiPrinterManager.getInstance()
-                    .searchCloudPrinter(context, method, object : SearchCallback {
-                        override fun onFound(printer: CloudPrinter?) {
-                            printer?.let { handlePrinterFound(it) }
-                        }
-                    })
+                    .searchCloudPrinter(context, method
+                    ) { printer -> printer?.let { handlePrinterFound(it) } }
             } catch (e: Exception) {
                 Log.e("VALT_SCAN", "Method $method failed", e)
             }
