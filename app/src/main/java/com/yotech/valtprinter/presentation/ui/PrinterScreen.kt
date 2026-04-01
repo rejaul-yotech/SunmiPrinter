@@ -104,8 +104,13 @@ fun PrinterScreen(viewModel: PrinterViewModel = hiltViewModel()) {
                         Text(info.name ?: "SUNMI Printer", fontWeight = FontWeight.Bold)
                     },
                     supportingContent = {
-                        // Displays the MAC, IP, or USB address
-                        Text("Address: ${info.address ?: "Unknown"}")
+                        val info = discovered.printer.cloudPrinterInfo
+                        val displayAddress = when (discovered.discoveryMode) {
+                            DiscoveryMode.USB -> "USB Device (VID: ${info.vid})"
+                            DiscoveryMode.BLUETOOTH -> "MAC: ${info.mac ?: "N/A"}"
+                            DiscoveryMode.LAN -> "IP: ${info.address ?: "Searching..."}"
+                        }
+                        Text(displayAddress)
                     },
                     modifier = Modifier.clickable {
                         // Pass the raw CloudPrinter object back to the ViewModel to connect

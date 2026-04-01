@@ -1,12 +1,11 @@
 package com.yotech.valtprinter.domain.repository
 
 import com.sunmi.externalprinterlibrary2.printer.CloudPrinter
-import com.yotech.valtprinter.data.DiscoveredPrinter // Import the wrapper
+import com.yotech.valtprinter.data.DiscoveredPrinter
 import kotlinx.coroutines.flow.StateFlow
 
 interface PrinterRepository {
     val status: StateFlow<String>
-    // Ensure this matches the wrapper class we are using
     val foundPrinters: StateFlow<List<DiscoveredPrinter>>
 
     fun startScan()

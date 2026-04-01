@@ -66,8 +66,28 @@ class PrinterRepositoryImpl @Inject constructor(
             .searchCloudPrinter(context, method, object : SearchCallback {
                 override fun onFound(printer: CloudPrinter?) {
                     printer?.let { found ->
+                        val info = found.cloudPrinterInfo
                         val currentList = _foundPrinters.value.toMutableList()
-                        if (currentList.none { it.printer.cloudPrinterInfo.address == found.cloudPrinterInfo.address }) {
+
+                        // FIX: Unique ID based on the connection type
+                        val uniqueId = when (mode) {
+                            DiscoveryMode.USB -> "USB-${info.vid}-${info.pid}"
+                            DiscoveryMode.BLUETOOTH -> "BT-${info.mac ?: info.address}"
+                            DiscoveryMode.LAN -> "LAN-${info.address}"
+                        }
+
+                        // Check if this specific connection mode for this device is already listed
+                        val alreadyExists = currentList.any { existing ->
+                            val exInfo = existing.printer.cloudPrinterInfo
+                            val existingId = when (existing.discoveryMode) {
+                                DiscoveryMode.USB -> "USB-${exInfo.vid}-${exInfo.pid}"
+                                DiscoveryMode.BLUETOOTH -> "BT-${exInfo.mac ?: exInfo.address}"
+                                DiscoveryMode.LAN -> "LAN-${exInfo.address}"
+                            }
+                            existingId == uniqueId
+                        }
+
+                        if (!alreadyExists) {
                             currentList.add(DiscoveredPrinter(found, mode))
                             _foundPrinters.value = currentList
                         }
@@ -86,21 +106,30 @@ class PrinterRepositoryImpl @Inject constructor(
     override fun connect(printer: CloudPrinter) {
         stopScan()
         _status.value = "Connecting..."
-        printer.connect(context, object : ConnectCallback {
-            override fun onConnect() {
-                activePrinter = printer
-                _status.value = "Connected: ${printer.cloudPrinterInfo.address}"
-            }
 
-            override fun onFailed(p0: String?) {
-                _status.value = "Error: $p0"
-            }
+        // Safety: Some Sunmi SDK versions require a small delay
+        // after stopping a scan before opening a USB/BT socket
+        CoroutineScope(Dispatchers.Main).launch {
+            delay(500)
+            printer.connect(context, object : ConnectCallback {
+                override fun onConnect() {
+                    activePrinter = printer
+                    // Show friendly name and the method used
+                    _status.value = "Connected: ${printer.cloudPrinterInfo.name ?: "Printer"}"
+                }
 
-            override fun onDisConnect() {
-                _status.value = "Disconnected"
-                activePrinter = null
-            }
-        })
+                override fun onFailed(p0: String?) {
+                    // If USB fails, it's often a permission issue.
+                    // If BT fails, it's the "Socket Closed" error you saw.
+                    _status.value = "Error: $p0"
+                }
+
+                override fun onDisConnect() {
+                    _status.value = "Disconnected"
+                    activePrinter = null
+                }
+            })
+        }
     }
 
     override suspend fun printLabel(title: String, printedBy: String) {
