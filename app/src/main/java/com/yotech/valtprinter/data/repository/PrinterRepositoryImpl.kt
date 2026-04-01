@@ -1,43 +1,57 @@
 package com.yotech.valtprinter.data.repository
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.util.Log
 import com.sunmi.externalprinterlibrary2.ConnectCallback
-import com.sunmi.externalprinterlibrary2.ResultCallback
 import com.sunmi.externalprinterlibrary2.SearchCallback
 import com.sunmi.externalprinterlibrary2.SunmiPrinterManager
 import com.sunmi.externalprinterlibrary2.printer.CloudPrinter
-import com.sunmi.externalprinterlibrary2.style.AlignStyle
-import com.sunmi.externalprinterlibrary2.style.CloudPrinterStatus
 import com.sunmi.externalprinterlibrary2.style.EncodeType
+import com.yotech.valtprinter.data.mapper.toDomain
 import com.yotech.valtprinter.data.model.DiscoveredPrinter
 import com.yotech.valtprinter.data.model.DiscoveryMode
+import com.yotech.valtprinter.data.source.RawSocketPrintSource
+import com.yotech.valtprinter.data.source.SdkPrintSource
+import com.yotech.valtprinter.domain.model.ConnectionType
+import com.yotech.valtprinter.domain.model.PrintResult
+import com.yotech.valtprinter.domain.model.PrinterDevice
+import com.yotech.valtprinter.domain.model.PrinterState
 import com.yotech.valtprinter.domain.repository.PrinterRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import java.net.InetSocketAddress
-import java.net.Socket
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class PrinterRepositoryImpl @Inject constructor(
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val sdkPrintSource: SdkPrintSource,
+    private val rawSocketPrintSource: RawSocketPrintSource
 ) : PrinterRepository {
 
     private val printMutex = Mutex()
-    private var activePrinter: CloudPrinter? = null
+    private var activeCloudPrinter: CloudPrinter? = null
+    // Store reference to pure domain device separately to rebuild `PrinterState.Connected` state
+    private var connectedDevice: PrinterDevice? = null
 
-    private val _foundPrinters = MutableStateFlow<List<DiscoveredPrinter>>(emptyList())
-    override val foundPrinters = _foundPrinters.asStateFlow()
+    // Private map to hold the internal SDK objects indexed by unique domain ID
+    private val internalPrintersMap = mutableMapOf<String, DiscoveredPrinter>()
 
-    private val _status = MutableStateFlow("Disconnected")
-    override val status = _status.asStateFlow()
+    private val _discoveredDevices = MutableStateFlow<List<PrinterDevice>>(emptyList())
+    override val discoveredDevices: StateFlow<List<PrinterDevice>> = _discoveredDevices.asStateFlow()
+
+    private val _printerState = MutableStateFlow<PrinterState>(PrinterState.Idle)
+    override val printerState: StateFlow<PrinterState> = _printerState.asStateFlow()
 
     private val repositoryScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
@@ -45,9 +59,10 @@ class PrinterRepositoryImpl @Inject constructor(
     private val searchMethods = listOf(1000, 2000, 3000)
 
     override fun startScan() {
-        _status.value = "Scanning..."
+        _printerState.value = PrinterState.Scanning
         stopAllSearches()
-        _foundPrinters.value = emptyList()
+        internalPrintersMap.clear()
+        _discoveredDevices.value = emptyList()
 
         searchMethods.forEach { method ->
             try {
@@ -78,123 +93,108 @@ class PrinterRepositoryImpl @Inject constructor(
             DiscoveryMode.LAN -> "LAN-${info.address}"
         }
 
-        val currentList = _foundPrinters.value.toMutableList()
-        if (currentList.none { it.id == uniqueId }) {
-            currentList.add(DiscoveredPrinter(printer, mode, uniqueId))
-            _foundPrinters.value = currentList
+        if (!internalPrintersMap.containsKey(uniqueId)) {
+            val discovered = DiscoveredPrinter(printer, mode, uniqueId)
+            internalPrintersMap[uniqueId] = discovered
+            
+            // Map to domain object and update state flow
+            val domainList = internalPrintersMap.values.map { it.toDomain() }
+            _discoveredDevices.value = domainList
             Log.d("PRINTER_DEBUG", "Found $mode Device: $uniqueId | IP: ${info.address}")
         }
     }
 
-    override fun connect(printer: CloudPrinter) {
+    override suspend fun connect(device: PrinterDevice) {
         stopAllSearches()
-        _status.value = "Connecting..."
+        _printerState.value = PrinterState.Connecting(device.name)
 
+        val discoveredPrinter = internalPrintersMap[device.id]
+        if (discoveredPrinter == null) {
+            _printerState.value = PrinterState.Error("Device instance lost. Please scan again.")
+            return
+        }
+
+        val cloudPrinter = discoveredPrinter.printer
         repositoryScope.launch {
             delay(500)
-            printer.connect(context, object : ConnectCallback {
+            cloudPrinter.connect(context, object : ConnectCallback {
                 override fun onConnect() {
-                    activePrinter = printer
-                    // CRITICAL: Explicitly set encoding to UTF_8 immediately after connection
+                    activeCloudPrinter = cloudPrinter
+                    connectedDevice = device
                     try {
-                        printer.setEncodeMode(EncodeType.UTF_8)
+                        cloudPrinter.setEncodeMode(EncodeType.UTF_8)
                     } catch (e: Exception) {
                         Log.e("PRINTER_DEBUG", "Encoding set failed", e)
                     }
-                    _status.value = "Connected: ${printer.cloudPrinterInfo.name}"
+                    _printerState.value = PrinterState.Connected(device)
                     Log.d("PRINTER_DEBUG", "Connection successful")
                 }
 
                 override fun onFailed(err: String?) {
-                    _status.value = "Connect Failed: $err"
+                    _printerState.value = PrinterState.Error("Connect Failed: $err")
                 }
 
                 override fun onDisConnect() {
-                    activePrinter = null
-                    _status.value = "Disconnected"
+                    if (activeCloudPrinter === cloudPrinter) {
+                        activeCloudPrinter = null
+                        connectedDevice = null
+                        _printerState.value = PrinterState.Idle
+                    }
                 }
             })
         }
     }
 
-    override suspend fun printLabel(title: String, printedBy: String) {
-        val printer = activePrinter ?: return
-        val info = printer.cloudPrinterInfo
-        val ip = info.address
-
-        printMutex.withLock {
-            withContext(Dispatchers.IO) {
-                // Use Socket Bypass for LAN to ensure text clarity
-                if (!ip.isNullOrEmpty() && ip != "0.0.0.0") {
-                    sendRawToSocket(ip, info.port.takeIf { it > 0 } ?: 9100, title, printedBy)
-                } else {
-                    // Optimized SDK print for USB
-                    performSdkPrint(printer, title, printedBy)
-                }
-            }
-        }
-    }
-
-    private suspend fun sendRawToSocket(ip: String, port: Int, title: String, user: String) {
+    override suspend fun autoConnectUsb(): Boolean {
+        // We do a silent quick scan just for USB
+        _printerState.value = PrinterState.AutoConnecting
+        stopAllSearches()
+        internalPrintersMap.clear()
+        
+        var foundUsb = false
+        val methodUSB = 1000
         try {
-            Socket().use { socket ->
-                socket.connect(InetSocketAddress(ip, port), 4000)
-                val out = socket.getOutputStream()
-
-                // ESC/POS Commands
-                out.write(byteArrayOf(0x1B, 0x40))      // Init
-                out.write(byteArrayOf(0x1B, 0x61, 0x01)) // Center
-                // Print Text with explicit newlines
-                out.write("\n$title\n".toByteArray(Charsets.UTF_8))
-                out.write("By: $user\n".toByteArray(Charsets.UTF_8))
-                out.write("\n\n\n\n\n".toByteArray()) // Feed
-                out.write(byteArrayOf(0x1D, 0x56, 0x42, 0x00)) // Cut
-
-                out.flush()
-                _status.value = "Print Success"
-            }
-        } catch (e: Exception) {
-            _status.value = "Socket Error: ${e.message}"
-            Log.e("VALT_PRINT", "Socket failed", e)
-        }
-    }
-
-    private suspend fun performSdkPrint(printer: CloudPrinter, title: String, user: String) {
-        val completable = CompletableDeferred<Boolean>()
-        try {
-            // 1. Clear everything
-            printer.clearTransBuffer()
-
-            // 2. Setup Style
-            printer.initStyle()
-            printer.setAlignment(AlignStyle.CENTER)
-
-            // 3. Queue Data - Adding explicit line breaks to ensure buffer fills
-            printer.printText("\n")
-            printer.printText(title)
-            printer.printText("\nBy: $user\n")
-            printer.printText("\n\n\n\n")
-
-            // 4. Queue Cut
-            printer.cutPaper(true)
-
-            // 5. Commit with a small delay to ensure the thermal head is ready
-            delay(100)
-            printer.commitTransBuffer(object : ResultCallback {
-                override fun onComplete() {
-                    Log.d("PRINTER_DEBUG", "Print buffer committed")
-                    completable.complete(true)
-                }
-                override fun onFailed(err: CloudPrinterStatus?) {
-                    _status.value = "SDK Error: ${err?.name}"
-                    completable.complete(false)
+            SunmiPrinterManager.getInstance().searchCloudPrinter(context, methodUSB, object : SearchCallback {
+                override fun onFound(printer: CloudPrinter?) {
+                    if (!foundUsb && printer != null) {
+                        foundUsb = true
+                        handlePrinterFound(printer) // Will put in internalMap
+                        val domainDev = internalPrintersMap.values.firstOrNull()?.toDomain()
+                        if (domainDev != null) {
+                            repositoryScope.launch { connect(domainDev) }
+                        }
+                    }
                 }
             })
         } catch (e: Exception) {
-            Log.e("PRINTER_DEBUG", "SDK Print Exception", e)
-            completable.complete(false)
+            Log.e("AUTO_CONNECT", "USB Search failed", e)
         }
-        completable.await()
+        
+        // Wait briefly for USB detection
+        delay(1500)
+        SunmiPrinterManager.getInstance().stopSearch(context, methodUSB)
+
+        if (!foundUsb) {
+            _printerState.value = PrinterState.Idle
+        }
+        return foundUsb
+    }
+
+    override suspend fun printReceipt(bitmap: Bitmap): PrintResult {
+        val printer = activeCloudPrinter
+        val device = connectedDevice
+
+        if (printer == null || device == null) {
+            return PrintResult.Failure("Not connected to any printer.")
+        }
+        
+        return printMutex.withLock {
+            if (device.connectionType == ConnectionType.LAN && device.address.isNotEmpty()) {
+                rawSocketPrintSource.printBitmap(device.address, device.port, bitmap)
+            } else {
+                sdkPrintSource.printBitmap(printer, bitmap)
+            }
+        }
     }
 
     private fun stopAllSearches() {
@@ -207,11 +207,20 @@ class PrinterRepositoryImpl @Inject constructor(
         }
     }
 
-    override fun stopScan() = stopAllSearches()
+    override fun stopScan() {
+        stopAllSearches()
+        if (_printerState.value is PrinterState.Scanning) {
+            _printerState.value = PrinterState.Idle
+        }
+    }
 
-    override fun release() {
+    override fun disconnect() {
         stopScan()
-        activePrinter?.release(context)
-        activePrinter = null
+        activeCloudPrinter?.release(context)
+        activeCloudPrinter = null
+        connectedDevice = null
+        _printerState.value = PrinterState.Idle
+        _discoveredDevices.value = emptyList()
+        internalPrintersMap.clear()
     }
 }
