@@ -1,46 +1,39 @@
 package com.yotech.valtprinter.presentation.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bluetooth
+import androidx.compose.material.icons.filled.Usb
+import androidx.compose.material.icons.filled.Wifi
+import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.yotech.valtprinter.data.DiscoveryMode
 import com.yotech.valtprinter.presentation.viewmodel.PrinterViewModel
 
 @Composable
 fun PrinterScreen(viewModel: PrinterViewModel = hiltViewModel()) {
     val status by viewModel.printerStatus.collectAsStateWithLifecycle()
+    // This now collects the wrapped DiscoveredPrinter objects
     val printers by viewModel.discoveredPrinters.collectAsStateWithLifecycle()
 
-    // Determine if the "Print" button should be active
     val isConnected = status.startsWith("Connected")
 
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(20.dp),
+        modifier = Modifier.fillMaxSize().padding(20.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
@@ -51,7 +44,6 @@ fun PrinterScreen(viewModel: PrinterViewModel = hiltViewModel()) {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Status Indicator
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(
@@ -80,21 +72,45 @@ fun PrinterScreen(viewModel: PrinterViewModel = hiltViewModel()) {
             style = MaterialTheme.typography.bodySmall
         )
 
-        // List of found printers
-        LazyColumn(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-        ) {
-            items(printers) { printer ->
+        LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            items(printers) { discovered ->
+
+                val info = discovered.printer.cloudPrinterInfo
+
                 ListItem(
-                    headlineContent = {
-                        Text(
-                            printer.cloudPrinterInfo.address ?: "Unknown Address"
-                        )
+                    leadingContent = {
+                        // Dynamically pick the icon based on how we found it
+                        val icon = when (discovered.discoveryMode) {
+                            DiscoveryMode.USB -> Icons.Default.Usb
+                            DiscoveryMode.BLUETOOTH -> Icons.Default.Bluetooth
+                            else -> Icons.Default.Wifi
+                        }
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primaryContainer),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = icon,
+                                contentDescription = discovered.discoveryMode.name,
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
                     },
-                    supportingContent = { Text("Click to Connect") },
-                    modifier = Modifier.clickable { viewModel.connectToDevice(printer) }
+                    headlineContent = {
+                        // This will display "NT311" or the specific model name
+                        Text(info.name ?: "SUNMI Printer", fontWeight = FontWeight.Bold)
+                    },
+                    supportingContent = {
+                        // Displays the MAC, IP, or USB address
+                        Text("Address: ${info.address ?: "Unknown"}")
+                    },
+                    modifier = Modifier.clickable {
+                        // Pass the raw CloudPrinter object back to the ViewModel to connect
+                        viewModel.connectToDevice(discovered.printer)
+                    }
                 )
                 HorizontalDivider()
             }
@@ -102,10 +118,9 @@ fun PrinterScreen(viewModel: PrinterViewModel = hiltViewModel()) {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Action Buttons
         Button(
             onClick = { viewModel.printLabel() },
-            enabled = isConnected, // Enabled only when status is "Connected"
+            enabled = isConnected,
             modifier = Modifier.fillMaxWidth(),
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
         ) {

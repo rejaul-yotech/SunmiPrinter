@@ -21,74 +21,79 @@ import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
+enum class DiscoveryMode { USB, BLUETOOTH, LAN }
+
+// Renamed 'type' to 'discoveryMode' to avoid SDK conflicts
+data class DiscoveredPrinter(
+    val printer: CloudPrinter,
+    val discoveryMode: DiscoveryMode
+)
+
 @Singleton
 class PrinterRepositoryImpl @Inject constructor(
     @ApplicationContext private val context: Context
 ) : PrinterRepository {
 
     private var activePrinter: CloudPrinter? = null
-
-
     private val _status = MutableStateFlow("Disconnected")
     override val status = _status.asStateFlow()
 
-    private val _foundPrinters = MutableStateFlow<List<CloudPrinter>>(emptyList())
+    private val _foundPrinters = MutableStateFlow<List<DiscoveredPrinter>>(emptyList())
+
+    // ADDED 'override' HERE
     override val foundPrinters = _foundPrinters.asStateFlow()
 
     private var scanJob: Job? = null
-    private val SCAN_TIMEOUT_MS = 30000L // 30 seconds
 
     override fun startScan() {
-        // 1. Cancel any existing scan job/timer
         scanJob?.cancel()
         _foundPrinters.value = emptyList()
         _status.value = "Scanning..."
 
-        // 2. Start the SDK Scan
+        // Scan all interfaces
+        search(SearchMethod.USB, DiscoveryMode.USB)
+        search(SearchMethod.BT, DiscoveryMode.BLUETOOTH)
+        search(SearchMethod.LAN, DiscoveryMode.LAN)
+
+        scanJob = CoroutineScope(Dispatchers.Main).launch {
+            delay(15000L)
+            if (_status.value == "Scanning...") _status.value = "Scan Finished"
+        }
+    }
+
+    private fun search(method: Int, mode: DiscoveryMode) {
         SunmiPrinterManager.getInstance()
-            .searchCloudPrinter(context, SearchMethod.BT, object : SearchCallback {
+            .searchCloudPrinter(context, method, object : SearchCallback {
                 override fun onFound(printer: CloudPrinter?) {
                     printer?.let { found ->
                         val currentList = _foundPrinters.value.toMutableList()
-                        if (currentList.none { it.cloudPrinterInfo.address == found.cloudPrinterInfo.address }) {
-                            currentList.add(found)
+                        if (currentList.none { it.printer.cloudPrinterInfo.address == found.cloudPrinterInfo.address }) {
+                            currentList.add(DiscoveredPrinter(found, mode))
                             _foundPrinters.value = currentList
                         }
                     }
                 }
             })
-
-        // 3. Launch a Coroutine timer for the timeout
-        scanJob = CoroutineScope(Dispatchers.Main).launch {
-            delay(SCAN_TIMEOUT_MS)
-            if (_status.value == "Scanning...") {
-                stopScan()
-                if (_foundPrinters.value.isEmpty()) {
-                    _status.value = "No Devices Found"
-                } else {
-                    _status.value = "Scan Finished"
-                }
-            }
-        }
     }
 
     override fun stopScan() {
         scanJob?.cancel()
+        SunmiPrinterManager.getInstance().stopSearch(context, SearchMethod.USB)
         SunmiPrinterManager.getInstance().stopSearch(context, SearchMethod.BT)
+        SunmiPrinterManager.getInstance().stopSearch(context, SearchMethod.LAN)
     }
 
     override fun connect(printer: CloudPrinter) {
         stopScan()
         _status.value = "Connecting..."
-
         printer.connect(context, object : ConnectCallback {
             override fun onConnect() {
                 activePrinter = printer
                 _status.value = "Connected: ${printer.cloudPrinterInfo.address}"
             }
 
-            override fun onFailed(error: String?) {
-                _status.value = "Error: ${error ?: "Unknown"}"
+            override fun onFailed(p0: String?) {
+                _status.value = "Error: $p0"
             }
 
             override fun onDisConnect() {

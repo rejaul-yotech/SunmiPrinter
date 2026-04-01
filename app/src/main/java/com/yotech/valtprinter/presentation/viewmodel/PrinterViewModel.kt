@@ -3,6 +3,7 @@ package com.yotech.valtprinter.presentation.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.sunmi.externalprinterlibrary2.printer.CloudPrinter
+import com.yotech.valtprinter.data.DiscoveredPrinter
 import com.yotech.valtprinter.domain.repository.PrinterRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.StateFlow
@@ -18,7 +19,7 @@ class PrinterViewModel @Inject constructor(
     val printerStatus: StateFlow<String> = repository.status
 
     // The list of printers found during the Bluetooth scan
-    val discoveredPrinters: StateFlow<List<CloudPrinter>> = repository.foundPrinters
+    val discoveredPrinters: StateFlow<List<DiscoveredPrinter>> = repository.foundPrinters
 
     /**
      * Triggers a Bluetooth scan for SUNMI Cloud Printers.
@@ -41,7 +42,7 @@ class PrinterViewModel @Inject constructor(
         viewModelScope.launch {
             repository.printLabel(
                 title = "Jingalala Printer",
-                printedBy = "Mohammad Rejaul Karim"
+                printedBy = "Muhammad Rejaul Karim"
             )
         }
     }
