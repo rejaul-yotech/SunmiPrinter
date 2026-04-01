@@ -1,10 +1,6 @@
 package com.yotech.valtprinter.presentation.ui
 
 import android.Manifest
-import android.bluetooth.BluetoothAdapter
-import android.bluetooth.BluetoothManager
-import android.content.Context
-import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -32,87 +28,54 @@ import dagger.hilt.android.AndroidEntryPoint
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
-
     private var permissionsGranted by mutableStateOf(false)
-    private var isBluetoothEnabled by mutableStateOf(false)
 
-    private val permissionLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { p ->
-            permissionsGranted = p.entries.all { it.value }
-        }
-
-    private val enableBtLauncher =
-        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-            checkBt()
-        }
+    private val permissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { results ->
+        permissionsGranted = results.values.all { it }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        permissionsGranted = hasPerms()
-        checkBt()
+        permissionsGranted = checkAllPermissions()
 
         setContent {
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    when {
-                        !permissionsGranted -> PermissionUI { permissionLauncher.launch(getPermList().toTypedArray()) }
-                        !isBluetoothEnabled -> BluetoothUI {
-                            enableBtLauncher.launch(
-                                Intent(
-                                    BluetoothAdapter.ACTION_REQUEST_ENABLE
-                                )
-                            )
-                        }
-
-                        else -> PrinterScreen()
+                    if (!permissionsGranted) {
+                        PermissionUI { permissionLauncher.launch(getRequiredPermissions()) }
+                    } else {
+                        PrinterScreen()
                     }
                 }
             }
         }
     }
 
-    private fun hasPerms() = getPermList().all {
-        ContextCompat.checkSelfPermission(
-            this,
-            it
-        ) == PackageManager.PERMISSION_GRANTED
+    private fun checkAllPermissions() = getRequiredPermissions().all {
+        ContextCompat.checkSelfPermission(this@MainActivity, it) == PackageManager.PERMISSION_GRANTED
     }
 
-    private fun checkBt() {
-        val bm = getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
-        isBluetoothEnabled = bm.adapter?.isEnabled == true
-    }
-
-    private fun getPermList() = mutableListOf(Manifest.permission.ACCESS_FINE_LOCATION).apply {
+    private fun getRequiredPermissions(): Array<String> {
+        val perms = mutableListOf(
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.INTERNET,
+            Manifest.permission.ACCESS_NETWORK_STATE
+        )
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            add(Manifest.permission.BLUETOOTH_SCAN)
-            add(Manifest.permission.BLUETOOTH_CONNECT)
+            perms.add(Manifest.permission.BLUETOOTH_SCAN)
+            perms.add(Manifest.permission.BLUETOOTH_CONNECT)
         }
+        return perms.toTypedArray()
     }
 
     @Composable
     fun PermissionUI(onGrant: () -> Unit) {
         Column(Modifier.padding(24.dp), Arrangement.Center, Alignment.CenterHorizontally) {
-            Text("Permissions Required", style = MaterialTheme.typography.headlineSmall)
-            Button(
-                onGrant,
-                Modifier
-                    .fillMaxWidth()
-                    .padding(top = 16.dp)
-            ) { Text("Grant Permissions") }
-        }
-    }
-
-    @Composable
-    fun BluetoothUI(onEnable: () -> Unit) {
-        Column(Modifier.padding(24.dp), Arrangement.Center, Alignment.CenterHorizontally) {
-            Text("Bluetooth is Off", style = MaterialTheme.typography.headlineSmall)
-            Button(
-                onEnable,
-                Modifier
-                    .fillMaxWidth()
-                    .padding(top = 16.dp)
-            ) { Text("Turn On Bluetooth") }
+            Text("Printer Access Required", style = MaterialTheme.typography.headlineSmall)
+            Text("We need Bluetooth and Location to find SUNMI devices.", Modifier.padding(8.dp))
+            Button(onClick = onGrant, Modifier.fillMaxWidth()) { Text("Grant Permissions") }
         }
     }
 }

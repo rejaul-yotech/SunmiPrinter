@@ -3,7 +3,7 @@ package com.yotech.valtprinter.presentation.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.sunmi.externalprinterlibrary2.printer.CloudPrinter
-import com.yotech.valtprinter.data.DiscoveredPrinter
+import com.yotech.valtprinter.data.model.DiscoveredPrinter
 import com.yotech.valtprinter.domain.repository.PrinterRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.StateFlow

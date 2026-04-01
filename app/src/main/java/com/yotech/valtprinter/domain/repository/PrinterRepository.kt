@@ -1,7 +1,7 @@
 package com.yotech.valtprinter.domain.repository
 
 import com.sunmi.externalprinterlibrary2.printer.CloudPrinter
-import com.yotech.valtprinter.data.DiscoveredPrinter
+import com.yotech.valtprinter.data.model.DiscoveredPrinter
 import kotlinx.coroutines.flow.StateFlow
 
 interface PrinterRepository {

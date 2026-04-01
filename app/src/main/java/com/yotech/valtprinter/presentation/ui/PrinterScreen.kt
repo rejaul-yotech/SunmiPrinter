@@ -2,7 +2,14 @@ package com.yotech.valtprinter.presentation.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -10,7 +17,16 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.Usb
 import androidx.compose.material.icons.filled.Wifi
-import androidx.compose.material3.*
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -21,7 +37,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.yotech.valtprinter.data.DiscoveryMode
+import com.yotech.valtprinter.data.model.DiscoveryMode
 import com.yotech.valtprinter.presentation.viewmodel.PrinterViewModel
 
 @Composable
@@ -33,7 +49,9 @@ fun PrinterScreen(viewModel: PrinterViewModel = hiltViewModel()) {
     val isConnected = status.startsWith("Connected")
 
     Column(
-        modifier = Modifier.fillMaxSize().padding(20.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(20.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
@@ -72,7 +90,11 @@ fun PrinterScreen(viewModel: PrinterViewModel = hiltViewModel()) {
             style = MaterialTheme.typography.bodySmall
         )
 
-        LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth()) {
+        LazyColumn(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+        ) {
             items(printers) { discovered ->
 
                 val info = discovered.printer.cloudPrinterInfo
@@ -83,7 +105,7 @@ fun PrinterScreen(viewModel: PrinterViewModel = hiltViewModel()) {
                         val icon = when (discovered.discoveryMode) {
                             DiscoveryMode.USB -> Icons.Default.Usb
                             DiscoveryMode.BLUETOOTH -> Icons.Default.Bluetooth
-                            else -> Icons.Default.Wifi
+                            DiscoveryMode.LAN -> Icons.Default.Wifi
                         }
                         Box(
                             modifier = Modifier

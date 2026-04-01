@@ -1,6 +1,6 @@
 package com.yotech.valtprinter.di
 
-import com.yotech.valtprinter.data.PrinterRepositoryImpl
+import com.yotech.valtprinter.data.repository.PrinterRepositoryImpl
 import com.yotech.valtprinter.domain.repository.PrinterRepository
 import dagger.Binds
 import dagger.Module
