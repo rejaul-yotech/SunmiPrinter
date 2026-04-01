@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.util.Log
 import com.sunmi.externalprinterlibrary2.ConnectCallback
 import com.sunmi.externalprinterlibrary2.SearchCallback
+import com.sunmi.externalprinterlibrary2.SearchMethod
 import com.sunmi.externalprinterlibrary2.SunmiPrinterManager
 import com.sunmi.externalprinterlibrary2.printer.CloudPrinter
 import com.sunmi.externalprinterlibrary2.style.EncodeType
@@ -41,6 +42,7 @@ class PrinterRepositoryImpl @Inject constructor(
 
     private val printMutex = Mutex()
     private var activeCloudPrinter: CloudPrinter? = null
+
     // Store reference to pure domain device separately to rebuild `PrinterState.Connected` state
     private var connectedDevice: PrinterDevice? = null
 
@@ -48,7 +50,8 @@ class PrinterRepositoryImpl @Inject constructor(
     private val internalPrintersMap = mutableMapOf<String, DiscoveredPrinter>()
 
     private val _discoveredDevices = MutableStateFlow<List<PrinterDevice>>(emptyList())
-    override val discoveredDevices: StateFlow<List<PrinterDevice>> = _discoveredDevices.asStateFlow()
+    override val discoveredDevices: StateFlow<List<PrinterDevice>> =
+        _discoveredDevices.asStateFlow()
 
     private val _printerState = MutableStateFlow<PrinterState>(PrinterState.Idle)
     override val printerState: StateFlow<PrinterState> = _printerState.asStateFlow()
@@ -66,11 +69,12 @@ class PrinterRepositoryImpl @Inject constructor(
 
         searchMethods.forEach { method ->
             try {
-                SunmiPrinterManager.getInstance().searchCloudPrinter(context, method, object : SearchCallback {
-                    override fun onFound(printer: CloudPrinter?) {
-                        printer?.let { handlePrinterFound(it) }
-                    }
-                })
+                SunmiPrinterManager.getInstance()
+                    .searchCloudPrinter(context, method, object : SearchCallback {
+                        override fun onFound(printer: CloudPrinter?) {
+                            printer?.let { handlePrinterFound(it) }
+                        }
+                    })
             } catch (e: Exception) {
                 Log.e("VALT_SCAN", "Method $method failed", e)
             }
@@ -96,7 +100,7 @@ class PrinterRepositoryImpl @Inject constructor(
         if (!internalPrintersMap.containsKey(uniqueId)) {
             val discovered = DiscoveredPrinter(printer, mode, uniqueId)
             internalPrintersMap[uniqueId] = discovered
-            
+
             // Map to domain object and update state flow
             val domainList = internalPrintersMap.values.map { it.toDomain() }
             _discoveredDevices.value = domainList
@@ -150,12 +154,12 @@ class PrinterRepositoryImpl @Inject constructor(
         _printerState.value = PrinterState.AutoConnecting
         stopAllSearches()
         internalPrintersMap.clear()
-        
+
         var foundUsb = false
-        val methodUSB = 1000
+        val methodUSB = SearchMethod.USB
         try {
-            SunmiPrinterManager.getInstance().searchCloudPrinter(context, methodUSB, object : SearchCallback {
-                override fun onFound(printer: CloudPrinter?) {
+            SunmiPrinterManager.getInstance()
+                .searchCloudPrinter(context, methodUSB) { printer ->
                     if (!foundUsb && printer != null) {
                         foundUsb = true
                         handlePrinterFound(printer) // Will put in internalMap
@@ -165,11 +169,10 @@ class PrinterRepositoryImpl @Inject constructor(
                         }
                     }
                 }
-            })
         } catch (e: Exception) {
             Log.e("AUTO_CONNECT", "USB Search failed", e)
         }
-        
+
         // Wait briefly for USB detection
         delay(1500)
         SunmiPrinterManager.getInstance().stopSearch(context, methodUSB)
@@ -187,7 +190,7 @@ class PrinterRepositoryImpl @Inject constructor(
         if (printer == null || device == null) {
             return PrintResult.Failure("Not connected to any printer.")
         }
-        
+
         return printMutex.withLock {
             if (device.connectionType == ConnectionType.LAN && device.address.isNotEmpty()) {
                 rawSocketPrintSource.printBitmap(device.address, device.port, bitmap)
