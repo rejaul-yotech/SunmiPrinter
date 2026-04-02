@@ -23,18 +23,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-
-data class ReceiptData(
-    val title: String,
-    val staffName: String,
-    val items: List<String> = emptyList() // Room for expansion
-)
+import com.yotech.valtprinter.domain.model.ReceiptData
 
 @Composable
 fun ReceiptTemplate(data: ReceiptData) {
-    // This Column is the actual "Paper" area. Width must be exactly 384 pixels for 80mm printer.
+    // This Column is the actual "Paper" area. Width must be exactly 576 pixels for 80mm printer.
     // In Compose, dp is usually translated to pixels based on density.
-    // However, our BitmapRenderer forces the view to be exactly 384 pixels wide.
+    // However, our BitmapRenderer forces the view to be exactly 576 pixels wide.
     // So the width modifier here should just match what looks good in preview.
     Column(
         modifier = Modifier

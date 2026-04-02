@@ -25,8 +25,18 @@ class RawSocketPrintSource @Inject constructor() {
             // 1. Initialize Printer
             out.write(byteArrayOf(0x1B, 0x40))
 
-            // 2. Set Alignment Center
+            // 2. Set Alignment Center (since we trim the bitmap width, the printer handles centering)
             out.write(byteArrayOf(0x1B, 0x61, 0x01))
+
+            // 2.1 Set Line Spacing to 0 (to avoid vertical gaps between graphics/text)
+            out.write(byteArrayOf(0x1B, 0x33, 0x00))
+
+            // 2.2 Set Left Margin to 0
+            out.write(byteArrayOf(0x1D, 0x4C, 0x00, 0x00))
+
+            // 2.3 Set Printable Area Width to 576 dots (standard 80mm)
+            // 576 = 0x40 (64) + 0x02 (2) * 256
+            out.write(byteArrayOf(0x1D, 0x57, 0x40, 0x02))
 
             // 3. Print Image using GS v 0
             val imageData = decodeBitmapToEscPos(bitmap)
@@ -49,18 +59,17 @@ class RawSocketPrintSource @Inject constructor() {
 
     /**
      * Decodes a Bitmap into the standard ESC/POS GS v 0 raster image format.
-     * [2D Smart Trim]: Calculates the bounding box (minX, maxX, minY, maxY) of non-white pixels
-     * to eliminate all horizontal and vertical white space.
+     * [Tight 2D Trim]: Calculates the absolute bounding box (minX, maxX, minY, maxY) 
+     * with zero buffer for absolute minimum white space.
      */
     private fun decodeBitmapToEscPos(bmp: Bitmap): ByteArray {
-        val fullWidth = bmp.width
+        val fullWidth = bmp.width 
         val fullHeight = bmp.height
 
-        // Extract all pixels at once
         val pixels = IntArray(fullWidth * fullHeight)
         bmp.getPixels(pixels, 0, fullWidth, 0, 0, fullWidth, fullHeight)
 
-        // 1. [2D Smart Trim] Find the bounding box of non-white pixels
+        // 1. [Tight 2D Trim] Find the absolute bounding box of non-white pixels
         var minX = fullWidth
         var maxX = -1
         var minY = fullHeight
@@ -70,15 +79,14 @@ class RawSocketPrintSource @Inject constructor() {
             val yOffset = y * fullWidth
             for (x in 0 until fullWidth) {
                 val pixel = pixels[yOffset + x]
-                
                 val a = (pixel shr 24) and 0xff
                 val r = (pixel shr 16) and 0xff
                 val g = (pixel shr 8) and 0xff
                 val bColor = pixel and 0xff
-
                 val luminance = (r * 0.299 + g * 0.587 + bColor * 0.114).toInt()
-                // If pixel is not white (alpha > 50% and luminance < 200)
-                if (a > 128 && luminance < 128) {
+                
+                // Keep threshold at 160 for original text quality
+                if (a > 10 && luminance < 160) {
                     if (x < minX) minX = x
                     if (x > maxX) maxX = x
                     if (y < minY) minY = y
@@ -87,12 +95,11 @@ class RawSocketPrintSource @Inject constructor() {
             }
         }
 
-        // If no content found, print a tiny 1x1 empty bit to avoid printer errors
         if (maxX == -1) {
             return byteArrayOf(0x1D, 0x76, 0x30, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00)
         }
 
-        // 2. Calculate trimmed dimensions
+        // 2. Absolute Tight Dimensions
         val trimmedWidth = maxX - minX + 1
         val trimmedHeight = maxY - minY + 1
 
@@ -118,7 +125,7 @@ class RawSocketPrintSource @Inject constructor() {
                         val g = (pixel shr 8) and 0xff
                         val bColor = pixel and 0xff
                         val luminance = (r * 0.299 + g * 0.587 + bColor * 0.114).toInt()
-                        if (a > 128 && luminance < 128) {
+                        if (a > 10 && luminance < 160) {
                             b = b or (1 shl (7 - k))
                         }
                     }

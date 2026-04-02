@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yotech.valtprinter.core.util.BitmapRenderer
 import com.yotech.valtprinter.domain.model.PrintResult
+import com.yotech.valtprinter.domain.model.ReceiptData
 import com.yotech.valtprinter.presentation.viewmodel.PrinterViewModel
 import com.yotech.valtprinter.ui.theme.CyanElectric
 import kotlinx.coroutines.launch
