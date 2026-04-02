@@ -25,8 +25,7 @@ class SdkPrintSource @Inject constructor() {
             // Print the bitmap
             printer.printImage(bitmap, com.sunmi.externalprinterlibrary2.style.ImageAlgorithm.BINARIZATION)
             
-            // Feed and cut
-            printer.printText("\n\n\n\n")
+            // Feed and cut (SDK handles feed to cutter automatically)
             printer.cutPaper(true)
 
             delay(100) // Ensure thermal head is ready
