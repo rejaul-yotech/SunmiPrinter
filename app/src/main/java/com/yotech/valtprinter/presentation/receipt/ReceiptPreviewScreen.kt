@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -68,7 +69,7 @@ fun ReceiptPreviewScreen(
     }
 
     val receiptData = remember {
-        ReceiptData("ORDER #404", "Jane Doe", listOf("1x Burger", "1x Soda"))
+        ReceiptData("ORDER #404", "Md. Rejaul Karim", listOf("1x Burger", "1x Soda"))
     }
 
     Scaffold(
@@ -116,7 +117,9 @@ fun ReceiptPreviewScreen(
                 },
                 modifier = Modifier
                     .fillMaxWidth()
+                    .navigationBarsPadding()
                     .height(56.dp),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = CyanElectric),
                 enabled = !isPrinting
             ) {

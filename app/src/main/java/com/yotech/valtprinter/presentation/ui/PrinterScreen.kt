@@ -10,8 +10,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -19,6 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Usb
 import androidx.compose.material.icons.filled.Wifi
@@ -32,6 +36,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -39,6 +44,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yotech.valtprinter.domain.model.ConnectionType
@@ -61,11 +67,13 @@ fun PrinterScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .padding(24.dp),
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .padding(horizontal = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
-            text = "Valt Device Settings",
+            text = "Sunmi Cloud Printer",
             style = MaterialTheme.typography.headlineMedium,
             color = MaterialTheme.colorScheme.onBackground
         )
@@ -77,20 +85,24 @@ fun PrinterScreen(
                 is PrinterState.Idle -> IdleStateView(
                     onScan = viewModel::startDiscovery
                 )
+
                 is PrinterState.AutoConnecting -> AutoConnectingView()
                 is PrinterState.Scanning -> ScanningStateView(
                     devices = devices,
                     onDeviceSelected = viewModel::connectToDevice,
                     onStopScan = viewModel::stopDiscovery
                 )
+
                 is PrinterState.Connecting -> ConnectingStateView(
                     deviceName = currentState.deviceName
                 )
+
                 is PrinterState.Connected -> ConnectedStateView(
                     device = currentState.device,
                     onPreviewClick = onNavigateToPreview,
                     onDisconnect = viewModel::disconnect
                 )
+
                 is PrinterState.Error -> ErrorStateView(
                     message = currentState.message,
                     onRetry = viewModel::startDiscovery
@@ -156,7 +168,10 @@ fun ScanningStateView(
 
 @Composable
 fun ConnectingStateView(deviceName: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
         CircularProgressIndicator(color = CyanElectric)
         Spacer(Modifier.height(16.dp))
         Text("Connecting to $deviceName...", style = MaterialTheme.typography.titleMedium)
@@ -176,43 +191,98 @@ fun ConnectedStateView(
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(
-                    imageVector = Icons.Default.Print,
-                    contentDescription = null,
-                    modifier = Modifier.size(64.dp),
-                    tint = MaterialTheme.colorScheme.primary
-                )
-                Spacer(Modifier.height(16.dp))
+                val connectionIcon = when (device.connectionType) {
+                    ConnectionType.USB -> Icons.Default.Usb
+                    ConnectionType.BLUETOOTH -> Icons.Default.Bluetooth
+                    ConnectionType.LAN -> Icons.Default.Wifi
+                }
+
+                Box(
+                    modifier = Modifier
+                        .size(80.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primaryContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = connectionIcon,
+                        contentDescription = null,
+                        modifier = Modifier.size(40.dp),
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+
+                    // Simple "Online" pulse/indicator at the bottom right of the icon
+                    Box(
+                        modifier = Modifier
+                            .size(16.dp)
+                            .align(Alignment.BottomEnd)
+                            .padding(2.dp)
+                            .clip(CircleShape)
+                            .background(androidx.compose.ui.graphics.Color.Green)
+                    )
+                }
+
+                Spacer(Modifier.height(24.dp))
+
                 Text(
-                    text = "Connected: ${device.name}",
-                    style = MaterialTheme.typography.titleLarge
+                    text = "PRINTER CONNECTED",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = CyanElectric,
+                    letterSpacing = androidx.compose.ui.unit.TextUnit.Unspecified
                 )
+
+                Text(
+                    text = device.name,
+                    style = MaterialTheme.typography.headlineSmall,
+                    textAlign = TextAlign.Center
+                )
+
                 if (device.address.isNotEmpty()) {
                     Text(
-                        text = "Address: ${device.address}",
-                        style = MaterialTheme.typography.bodyMedium,
+                        text = device.address,
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.secondary
                     )
                 }
             }
         }
 
-        Spacer(Modifier.height(32.dp))
+        Spacer(Modifier.height(40.dp))
 
         Button(
             onClick = onPreviewClick,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(56.dp),
+                .height(64.dp),
+            shape = RoundedCornerShape(12.dp),
             colors = ButtonDefaults.buttonColors(containerColor = CyanElectric)
         ) {
-            Text("PREVIEW TICKET", style = MaterialTheme.typography.titleMedium, color = NavySurface)
+            Icon(Icons.Default.Print, contentDescription = null, tint = NavySurface)
+            Spacer(Modifier.width(8.dp))
+            Text(
+                "PREVIEW TICKET",
+                style = MaterialTheme.typography.titleMedium,
+                color = NavySurface
+            )
         }
 
         Spacer(Modifier.height(16.dp))
 
-        TextButton(onClick = onDisconnect) {
-            Text("Disconnect", color = MaterialTheme.colorScheme.error)
+        OutlinedButton(
+            onClick = onDisconnect,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp),
+            shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+            border = androidx.compose.foundation.BorderStroke(
+                1.dp,
+                MaterialTheme.colorScheme.error.copy(alpha = 0.5f)
+            )
+        ) {
+            Icon(Icons.Default.LinkOff, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text("Disconnect Device")
         }
     }
 }
@@ -227,7 +297,11 @@ fun ErrorStateView(message: String, onRetry: () -> Unit) {
             tint = MaterialTheme.colorScheme.error
         )
         Spacer(Modifier.height(16.dp))
-        Text(message, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.error)
+        Text(
+            message,
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.error
+        )
         Spacer(Modifier.height(24.dp))
         Button(onClick = onRetry) {
             Text("Retry Scan")
@@ -240,7 +314,7 @@ fun RowHeader(title: String, onAction: () -> Unit, actionText: String) {
     androidx.compose.foundation.layout.Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(bottom = 16.dp),
+            .padding(vertical = 8.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -273,8 +347,13 @@ fun DeviceListItem(device: PrinterDevice, onClick: () -> Unit) {
         },
         headlineContent = { Text(device.name, style = MaterialTheme.typography.titleMedium) },
         supportingContent = {
-            val subText = if (device.connectionType == ConnectionType.USB) "USB Connection" else device.address
-            Text(subText, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+            val subText =
+                if (device.connectionType == ConnectionType.USB) "USB Connection" else device.address
+            Text(
+                subText,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.secondary
+            )
         },
         modifier = Modifier.clickable { onClick() }
     )
