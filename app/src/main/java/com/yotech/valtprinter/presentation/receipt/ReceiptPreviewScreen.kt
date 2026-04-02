@@ -62,6 +62,7 @@ fun ReceiptPreviewScreen(
                 is PrintResult.Success -> {
                     Toast.makeText(context, "Print Success!", Toast.LENGTH_SHORT).show()
                 }
+
                 is PrintResult.Failure -> {
                     Toast.makeText(context, result.reason, Toast.LENGTH_LONG).show()
                 }

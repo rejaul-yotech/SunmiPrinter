@@ -61,7 +61,7 @@ fun ReceiptTemplate(data: ReceiptData) {
 
         Spacer(Modifier.height(8.dp))
         HorizontalDivider(thickness = 2.dp, color = Color.Black)
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(8.dp))
 
         Text(
             text = data.title,
@@ -69,13 +69,13 @@ fun ReceiptTemplate(data: ReceiptData) {
             fontWeight = FontWeight.ExtraBold,
             color = Color.Black
         )
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(4.dp))
         Text(
             text = "Staff: ${data.staffName}",
             fontSize = 18.sp,
             color = Color.Black
         )
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(12.dp))
 
         data.items.forEach { item ->
             Text(
@@ -84,13 +84,12 @@ fun ReceiptTemplate(data: ReceiptData) {
                 color = Color.Black,
                 fontWeight = FontWeight.Medium
             )
-            Spacer(Modifier.height(8.dp))
         }
 
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(8.dp))
         Text(
             text = "*--- END OF TICKET ---*",
-            fontSize = 24.sp,
+            fontSize = 20.sp,
             color = Color.Black
         )
     }

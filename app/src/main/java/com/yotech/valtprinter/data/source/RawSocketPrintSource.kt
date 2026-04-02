@@ -1,7 +1,6 @@
 package com.yotech.valtprinter.data.source
 
 import android.graphics.Bitmap
-import android.graphics.Color
 import android.util.Log
 import com.yotech.valtprinter.domain.model.PrintResult
 import kotlinx.coroutines.Dispatchers
@@ -15,47 +14,64 @@ import javax.inject.Singleton
 @Singleton
 class RawSocketPrintSource @Inject constructor() {
 
-    suspend fun printBitmap(ip: String, port: Int, bitmap: Bitmap): PrintResult = withContext(Dispatchers.IO) {
-        var socket: Socket? = null
-        try {
-            socket = Socket()
-            socket.connect(InetSocketAddress(ip, port.takeIf { it > 0 } ?: 9100), 4000)
-            val out: OutputStream = socket.getOutputStream()
+    suspend fun printBitmap(ip: String, port: Int, bitmap: Bitmap): PrintResult =
+        withContext(Dispatchers.IO) {
+            var socket: Socket? = null
+            try {
+                socket = Socket()
+                socket.connect(InetSocketAddress(ip, port.takeIf { it > 0 } ?: 9100), 4000)
+                val out: OutputStream = socket.getOutputStream()
 
-            // 1. Initialize Printer
-            out.write(byteArrayOf(0x1B, 0x40))
+                // 1. Skip ESC @ (Initialize) to avoid firmware-default paper feed
+                // We manually set all parameters below instead of a full reset.
 
-            // 2. Set Alignment Center (since we trim the bitmap width, the printer handles centering)
-            out.write(byteArrayOf(0x1B, 0x61, 0x01))
+                // 2. Set Alignment Center
+                out.write(byteArrayOf(0x1B, 0x61, 0x01))
 
-            // 2.1 Set Line Spacing to 0 (to avoid vertical gaps between graphics/text)
-            out.write(byteArrayOf(0x1B, 0x33, 0x00))
+                // 2.0.1 [Absolute Edge] Enable Auto-Backfeed via GS ( K
+                // GS ( K <pL> <pH> <m> <n> -> 0x1D 0x28 0x4B 0x02 0x00 0x02 0x02
+                out.write(byteArrayOf(0x1D, 0x28, 0x4B, 0x02, 0x00, 0x02, 0x02))
 
-            // 2.2 Set Left Margin to 0
-            out.write(byteArrayOf(0x1D, 0x4C, 0x00, 0x00))
+                // 2.0.2 [Absolute Edge] Manual Backfeed attempt (Uppercase K)
+                // ESC K n -> 96 dots = 12mm.
+                out.write(byteArrayOf(0x1B, 0x4B, 0x60)) // 0x60 = 96
 
-            // 2.3 Set Printable Area Width to 576 dots (standard 80mm)
-            // 576 = 0x40 (64) + 0x02 (2) * 256
-            out.write(byteArrayOf(0x1D, 0x57, 0x40, 0x02))
+                // 2.1 Set Line Spacing to 0 (to avoid vertical gaps between graphics/text)
+                out.write(byteArrayOf(0x1B, 0x33, 0x00))
 
-            // 3. Print Image using GS v 0
-            val imageData = decodeBitmapToEscPos(bitmap)
-            out.write(imageData)
+                // 2.2 Set Left Margin to 0
+                out.write(byteArrayOf(0x1D, 0x4C, 0x00, 0x00))
 
-            // 4. Cut Paper
-            // We remove manual \n feeds because GS V 66 automatically feeds to the cutter 
-            out.write(byteArrayOf(0x1D, 0x56, 0x42, 0x00)) 
+                // 2.3 Set Printable Area Width to 576 dots (standard 80mm)
+                // 576 = 0x40 (64) + 0x02 (2) * 256
+                out.write(byteArrayOf(0x1D, 0x57, 0x40, 0x02))
 
-            out.flush()
-            PrintResult.Success
-        } catch (e: Exception) {
-            val errorMsg = "Socket Socket Error: ${e.message}"
-            Log.e("RAW_SOCKET", errorMsg, e)
-            PrintResult.Failure(errorMsg)
-        } finally {
-            socket?.close()
+                // 2.4 [Absolute Edge] Set Top Margin to 0 explicitly
+                // GS L nL nH -> Set left/top relative position to 0
+                out.write(byteArrayOf(0x1D, 0x4C, 0x00, 0x00))
+
+                // 3. Print Image using GS v 0
+                val imageData = decodeBitmapToEscPos(bitmap)
+                out.write(imageData)
+
+                // 4. Cut Paper (Safe Tight Mode)
+                // ESC J n -> Feed n dots forward. 96 dots = 12mm.
+                // Restored to 96 dots for safer cutting and top/bottom symmetry.
+                out.write(byteArrayOf(0x1B, 0x4A, 0x60)) // 96 dots = 0x60
+
+                // GS V 1 -> Partial Cut without additional feeding
+                out.write(byteArrayOf(0x1D, 0x56, 0x01))
+
+                out.flush()
+                PrintResult.Success
+            } catch (e: Exception) {
+                val errorMsg = "Socket Socket Error: ${e.message}"
+                Log.e("RAW_SOCKET", errorMsg, e)
+                PrintResult.Failure(errorMsg)
+            } finally {
+                socket?.close()
+            }
         }
-    }
 
     /**
      * Decodes a Bitmap into the standard ESC/POS GS v 0 raster image format.
@@ -63,7 +79,7 @@ class RawSocketPrintSource @Inject constructor() {
      * with zero buffer for absolute minimum white space.
      */
     private fun decodeBitmapToEscPos(bmp: Bitmap): ByteArray {
-        val fullWidth = bmp.width 
+        val fullWidth = bmp.width
         val fullHeight = bmp.height
 
         val pixels = IntArray(fullWidth * fullHeight)
@@ -84,7 +100,7 @@ class RawSocketPrintSource @Inject constructor() {
                 val g = (pixel shr 8) and 0xff
                 val bColor = pixel and 0xff
                 val luminance = (r * 0.299 + g * 0.587 + bColor * 0.114).toInt()
-                
+
                 // Keep threshold at 160 for original text quality
                 if (a > 10 && luminance < 160) {
                     if (x < minX) minX = x
