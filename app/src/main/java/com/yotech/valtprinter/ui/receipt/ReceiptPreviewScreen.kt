@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Coffee
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -25,6 +26,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -40,9 +42,12 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yotech.valtprinter.core.util.BitmapRenderer
 import com.yotech.valtprinter.domain.model.PrintResult
-import com.yotech.valtprinter.domain.model.ReceiptData
+import com.yotech.valtprinter.domain.model.orderdata.BillingData
+import com.yotech.valtprinter.domain.model.orderdata.OrderItem
+import com.yotech.valtprinter.domain.model.orderdata.SubOrderItem
 import com.yotech.valtprinter.ui.viewmodel.PrinterViewModel
 import com.yotech.valtprinter.ui.theme.CyanElectric
+import com.yotech.valtprinter.ui.theme.NavySurface
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -72,17 +77,72 @@ fun ReceiptPreviewScreen(
         }
     }
 
-    val receiptData = remember {
-        ReceiptData("ORDER #404", "Md. Rejaul Karim", listOf("1x Burger", "2x Fries", "1x Coke"))
+    // High Fidelity Dummy Data based on our new Premium Layout
+    val billingData = remember {
+        BillingData(
+            restaurantName = "Dishoom Kensington",
+            restaurantPhone = "+44 20 7420 9325",
+            logoResId = Icons.Default.Coffee,
+            addressLine1 = "4 Derry Street",
+            city = "LONDON",
+            postalCode = "W8 5SE",
+            countryCode = "GB",
+            staffName = "Md. Rejaul Karim",
+            deviceName = "Sunmi V2 Pro",
+            orderDeviceName = "Tablet-KDS-01",
+            timestamp = System.currentTimeMillis(),
+            orderId = "DSH-9921",
+            orderTag = "Table 14",
+            orderReference = "CHK-55201",
+            orderType = "Dine In",
+            currencyCode = "GBP",
+            paymentStatus = "Paid",
+            footerNote = "Optional 12.5% service charge added. Thank you!",
+            subtotal = 44.0,
+            serviceCharge = 5.50,
+            vatPercentage = 20.0,
+            isVatInclusive = true,
+            grandTotal = 49.50,
+            items = listOf(
+                OrderItem(
+                    id = "item_101",
+                    name = "Chicken Ruby",
+                    category = "Mains",
+                    unitPrice = 14.50,
+                    quantity = 2,
+                    unitLabel = "portion",
+                    subItems = listOf(
+                        SubOrderItem("mod_1", "Extra Spicy", 0.0, 1, "")
+                    )
+                ),
+                OrderItem(
+                    id = "item_202",
+                    name = "Garlic Naan",
+                    category = "Sides",
+                    unitPrice = 4.50,
+                    quantity = 3,
+                    unitLabel = "pcs"
+                ),
+                OrderItem(
+                    id = "item_303",
+                    name = "Masala Chai",
+                    category = "Drinks",
+                    unitPrice = 3.50,
+                    quantity = 2,
+                    unitLabel = "cups"
+                )
+            )
+        )
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Preview & Print") },
+                title = { Text("Preview & Print", color = CyanElectric) },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = NavySurface),
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = CyanElectric)
                     }
                 }
             )
@@ -100,10 +160,10 @@ fun ReceiptPreviewScreen(
                     .weight(1f)
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState()),
-                contentAlignment = Alignment.Center
+                contentAlignment = Alignment.TopCenter
             ) {
-                // The actual preview composable
-                ReceiptTemplate(data = receiptData)
+                // The actual premium paper layout
+                PosPrintingScreen(data = billingData)
             }
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -113,8 +173,9 @@ fun ReceiptPreviewScreen(
                 onClick = {
                     isPrinting = true
                     scope.launch {
+                        // Capture the PosPrintingScreen layout exactly as it will appear on paper
                         val bitmap: Bitmap = BitmapRenderer.renderComposableToBitmap(view) {
-                            ReceiptTemplate(data = receiptData)
+                            PosPrintingScreen(data = billingData)
                         }
                         viewModel.printReceipt(bitmap)
                     }
@@ -122,15 +183,15 @@ fun ReceiptPreviewScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .navigationBarsPadding()
-                    .height(56.dp),
+                    .height(64.dp),
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = CyanElectric),
                 enabled = !isPrinting
             ) {
                 if (isPrinting) {
-                    CircularProgressIndicator(color = MaterialTheme.colorScheme.onPrimary)
+                    CircularProgressIndicator(color = NavySurface)
                 } else {
-                    Text("PRINT RECEIPT", style = MaterialTheme.typography.titleMedium)
+                    Text("PRINT TO SUNMI", style = MaterialTheme.typography.titleMedium, color = NavySurface)
                 }
             }
         }

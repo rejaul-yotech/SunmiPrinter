@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Coffee
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -101,6 +102,8 @@ fun ReceiptTemplatePreview() {
         data = ReceiptData(
             title = "ORDER #102",
             staffName = "Md. Rejaul Karim",
+            restaurantName = "Dishoom Kensington",
+            logoResId = Icons.Default.Coffee,
             items = listOf("1x Burger", "2x Fries", "1x Coke")
         )
     )
