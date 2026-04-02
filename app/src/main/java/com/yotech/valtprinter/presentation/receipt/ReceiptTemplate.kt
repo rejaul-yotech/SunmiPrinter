@@ -38,9 +38,8 @@ fun ReceiptTemplate(data: ReceiptData) {
     // So the width modifier here should just match what looks good in preview.
     Column(
         modifier = Modifier
-            .width(384.dp)
-            .background(Color.White)
-            .padding(20.dp),
+            .width(576.dp)
+            .background(Color.White),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Row(

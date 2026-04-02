@@ -25,14 +25,20 @@ object BitmapRenderer {
             setViewTreeViewModelStoreOwner(parentView.findViewTreeViewModelStoreOwner())
             setViewTreeSavedStateRegistryOwner(parentView.findViewTreeSavedStateRegistryOwner())
 
-            setContent(content)
-            layoutParams = ViewGroup.LayoutParams(384, ViewGroup.LayoutParams.WRAP_CONTENT)
+            setContent {
+                androidx.compose.runtime.CompositionLocalProvider(
+                    androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(1f)
+                ) {
+                    content()
+                }
+            }
+            layoutParams = ViewGroup.LayoutParams(576, ViewGroup.LayoutParams.WRAP_CONTENT)
         }
 
         val rootView = parentView.rootView as? ViewGroup
         rootView?.addView(composeView)
 
-        val measureSpecWidth = View.MeasureSpec.makeMeasureSpec(384, View.MeasureSpec.EXACTLY)
+        val measureSpecWidth = View.MeasureSpec.makeMeasureSpec(576, View.MeasureSpec.EXACTLY)
         val measureSpecHeight = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
 
         composeView.measure(measureSpecWidth, measureSpecHeight)
