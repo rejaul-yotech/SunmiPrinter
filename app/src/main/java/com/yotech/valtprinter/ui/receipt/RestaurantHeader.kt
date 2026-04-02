@@ -32,40 +32,11 @@ fun RestaurantHeader(
     modifier: Modifier = Modifier,
     data: BillingData
 ) {
-    val myId = "inlineIcon"
-    val inlineContent = mapOf(
-        Pair(
-            myId,
-            InlineTextContent(
-                Placeholder(
-                    width = 54.sp,
-                    height = 54.sp,
-                    placeholderVerticalAlign = PlaceholderVerticalAlign.Center
-                )
-            ) {
-                // Inline Icon logic from your request!
-                Icon(
-                    imageVector = data.logoResId, // Using ImageVector for now, as defined in model
-                    contentDescription = null,
-                    tint = Color.Unspecified, // Keeps original logo colors
-                    modifier = Modifier.size(54.dp)
-                )
-            }
-        )
-    )
-
-    val annotatedString = buildAnnotatedString {
-        append(data.restaurantName)
-        append(" ") // Space between name and icon
-        appendInlineContent(myId, "[icon]")
-    }
 
     Column(modifier = modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-        // 1. Restaurant Name with Tailored Inline Logo
         Text(
-            text = annotatedString,
-            inlineContent = inlineContent,
-            fontSize = 40.sp, // Increased for visibility
+            text = data.restaurantName,
+            fontSize = 40.sp,
             fontWeight = FontWeight.Bold,
             color = Color.Black
         )
@@ -75,7 +46,7 @@ fun RestaurantHeader(
         // 2. Primary Address Line
         Text(
             text = data.addressLine1,
-            fontSize = 32.sp, // Increased for visibility
+            fontSize = 32.sp,
             fontWeight = FontWeight.Bold,
             color = Color.Black
         )
@@ -84,7 +55,7 @@ fun RestaurantHeader(
         data.addressLine2?.takeIf { it.isNotBlank() }?.let { line2 ->
             Text(
                 text = line2,
-                fontSize = 22.sp, // Increased for visibility
+                fontSize = 22.sp,
                 color = Color.DarkGray
             )
         }
@@ -96,7 +67,7 @@ fun RestaurantHeader(
 
         Text(
             text = cityLine,
-            fontSize = 22.sp, // Increased for visibility
+            fontSize = 22.sp,
             color = Color.Black
         )
 
@@ -107,7 +78,7 @@ fun RestaurantHeader(
 
         Text(
             text = regionLine,
-            fontSize = 22.sp, // Increased for visibility
+            fontSize = 22.sp,
             fontWeight = FontWeight.Medium,
             color = Color.Black
         )

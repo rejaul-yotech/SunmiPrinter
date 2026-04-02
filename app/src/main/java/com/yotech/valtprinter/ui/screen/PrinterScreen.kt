@@ -54,10 +54,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yotech.valtprinter.domain.model.ConnectionType
 import com.yotech.valtprinter.domain.model.PrinterDevice
 import com.yotech.valtprinter.domain.model.PrinterState
-import com.yotech.valtprinter.ui.viewmodel.PrinterViewModel
 import com.yotech.valtprinter.ui.theme.CyanElectric
 import com.yotech.valtprinter.ui.theme.NavySurface
 import com.yotech.valtprinter.ui.theme.VioletElectric
+import com.yotech.valtprinter.ui.viewmodel.PrinterViewModel
 
 @Composable
 fun PrinterScreen(
@@ -194,7 +194,12 @@ fun ConnectedStateView(
             shape = RoundedCornerShape(16.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
-            Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(
+                Modifier
+                    .padding(24.dp)
+                    .fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
                 val connectionIcon = when (device.connectionType) {
                     ConnectionType.USB -> Icons.Default.Usb
                     ConnectionType.BLUETOOTH -> Icons.Default.Bluetooth
