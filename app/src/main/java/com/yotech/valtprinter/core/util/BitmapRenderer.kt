@@ -19,41 +19,56 @@ object BitmapRenderer {
     suspend fun renderComposableToBitmap(
         parentView: View,
         content: @Composable () -> Unit
-    ): Bitmap = withContext(Dispatchers.Main) {
-        val composeView = ComposeView(parentView.context).apply {
-            setViewTreeLifecycleOwner(parentView.findViewTreeLifecycleOwner())
-            setViewTreeViewModelStoreOwner(parentView.findViewTreeViewModelStoreOwner())
-            setViewTreeSavedStateRegistryOwner(parentView.findViewTreeSavedStateRegistryOwner())
+    ): Bitmap {
+        // 1. Create and measure the view on the Main thread
+        val (width, height, composeView) = withContext(Dispatchers.Main) {
+            val view = ComposeView(parentView.context).apply {
+                // [Stealth Mode] - Hide the capture view from the user
+                alpha = 0f
+                translationX = 5000f // Move off-screen in case alpha isn't enough
 
-            setContent {
-                androidx.compose.runtime.CompositionLocalProvider(
-                    androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(1f)
-                ) {
-                    content()
+                setViewTreeLifecycleOwner(parentView.findViewTreeLifecycleOwner())
+                setViewTreeViewModelStoreOwner(parentView.findViewTreeViewModelStoreOwner())
+                setViewTreeSavedStateRegistryOwner(parentView.findViewTreeSavedStateRegistryOwner())
+
+                setContent {
+                    androidx.compose.runtime.CompositionLocalProvider(
+                        androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(1f)
+                    ) {
+                        content()
+                    }
                 }
+                layoutParams = ViewGroup.LayoutParams(576, ViewGroup.LayoutParams.WRAP_CONTENT)
             }
-            layoutParams = ViewGroup.LayoutParams(576, ViewGroup.LayoutParams.WRAP_CONTENT)
+
+            val rootView = parentView.rootView as? ViewGroup
+            rootView?.addView(view)
+
+            val measureSpecWidth = View.MeasureSpec.makeMeasureSpec(576, View.MeasureSpec.EXACTLY)
+            val measureSpecHeight = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+
+            view.measure(measureSpecWidth, measureSpecHeight)
+            val measuredWidth = view.measuredWidth
+            val measuredHeight = view.measuredHeight
+
+            view.layout(0, 0, measuredWidth, measuredHeight)
+
+            Triple(measuredWidth, measuredHeight, view)
         }
 
-        val rootView = parentView.rootView as? ViewGroup
-        rootView?.addView(composeView)
+        // 2. Perform the actual drawing and bitmap creation
+        return withContext(Dispatchers.Default) {
+            val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bitmap)
+            canvas.drawColor(android.graphics.Color.WHITE)
 
-        val measureSpecWidth = View.MeasureSpec.makeMeasureSpec(576, View.MeasureSpec.EXACTLY)
-        val measureSpecHeight = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+            // Draw must still happen on Main for some View types, but we minimize the window
+            withContext(Dispatchers.Main) {
+                composeView.draw(canvas)
+                (parentView.rootView as? ViewGroup)?.removeView(composeView)
+            }
 
-        composeView.measure(measureSpecWidth, measureSpecHeight)
-        val measuredWidth = composeView.measuredWidth
-        val measuredHeight = composeView.measuredHeight
-
-        composeView.layout(0, 0, measuredWidth, measuredHeight)
-
-        val bitmap = Bitmap.createBitmap(measuredWidth, measuredHeight, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(bitmap)
-        canvas.drawColor(android.graphics.Color.WHITE)
-        composeView.draw(canvas)
-
-        rootView?.removeView(composeView)
-
-        bitmap
+            bitmap
+        }
     }
 }

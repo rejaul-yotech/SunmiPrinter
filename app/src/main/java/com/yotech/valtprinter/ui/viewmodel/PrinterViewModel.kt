@@ -14,10 +14,13 @@ import com.yotech.valtprinter.domain.usecase.PrintReceiptUseCase
 import com.yotech.valtprinter.domain.usecase.StartScanUseCase
 import com.yotech.valtprinter.domain.usecase.StopScanUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
+import com.yotech.valtprinter.domain.model.PrintStatus
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -35,8 +38,8 @@ class PrinterViewModel @Inject constructor(
     val printerState: StateFlow<PrinterState> = repository.printerState
     val discoveredDevices: StateFlow<List<PrinterDevice>> = repository.discoveredDevices
 
-    private val _printResult = MutableSharedFlow<PrintResult>()
-    val printResult: SharedFlow<PrintResult> = _printResult.asSharedFlow()
+    private val _printStatus = MutableStateFlow<PrintStatus>(PrintStatus.Idle)
+    val printStatus: StateFlow<PrintStatus> = _printStatus.asStateFlow()
 
     init {
         // Attempt to auto Connect USB immediately upon boot up
@@ -69,9 +72,22 @@ class PrinterViewModel @Inject constructor(
 
     fun printReceipt(bitmap: Bitmap) {
         viewModelScope.launch {
-            val result = printReceiptUseCase(bitmap)
-            _printResult.emit(result)
+            try {
+                _printStatus.value = PrintStatus.Sending
+                val result = printReceiptUseCase(bitmap)
+                _printStatus.value = if (result is PrintResult.Success) {
+                    PrintStatus.Success
+                } else {
+                    PrintStatus.Failure((result as PrintResult.Failure).reason)
+                }
+            } catch (e: Exception) {
+                _printStatus.value = PrintStatus.Failure("Unexpected Error: ${e.message}")
+            }
         }
+    }
+
+    fun resetPrintStatus() {
+        _printStatus.value = PrintStatus.Idle
     }
 
     fun disconnect() {
