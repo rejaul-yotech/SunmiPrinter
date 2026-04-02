@@ -158,8 +158,7 @@ fun ReceiptPreviewScreen(
             Box(
                 modifier = Modifier
                     .weight(1f)
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState()),
+                    .fillMaxWidth(),
                 contentAlignment = Alignment.TopCenter
             ) {
                 // The actual premium paper layout
@@ -175,7 +174,7 @@ fun ReceiptPreviewScreen(
                     scope.launch {
                         // Capture the PosPrintingScreen layout exactly as it will appear on paper
                         val bitmap: Bitmap = BitmapRenderer.renderComposableToBitmap(view) {
-                            PosPrintingScreen(data = billingData)
+                            PosPrintingScreen(data = billingData, isScrollEnabled = false)
                         }
                         viewModel.printReceipt(bitmap)
                     }

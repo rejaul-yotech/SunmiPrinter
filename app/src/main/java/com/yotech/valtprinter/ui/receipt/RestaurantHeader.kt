@@ -38,8 +38,8 @@ fun RestaurantHeader(
             myId,
             InlineTextContent(
                 Placeholder(
-                    width = 44.sp,
-                    height = 44.sp,
+                    width = 54.sp,
+                    height = 54.sp,
                     placeholderVerticalAlign = PlaceholderVerticalAlign.Center
                 )
             ) {
@@ -48,7 +48,7 @@ fun RestaurantHeader(
                     imageVector = data.logoResId, // Using ImageVector for now, as defined in model
                     contentDescription = null,
                     tint = Color.Unspecified, // Keeps original logo colors
-                    modifier = Modifier.size(44.dp)
+                    modifier = Modifier.size(54.dp)
                 )
             }
         )
@@ -65,7 +65,7 @@ fun RestaurantHeader(
         Text(
             text = annotatedString,
             inlineContent = inlineContent,
-            fontSize = 32.sp, // Sized slightly down for standard paper width
+            fontSize = 40.sp, // Increased for visibility
             fontWeight = FontWeight.Bold,
             color = Color.Black
         )
@@ -75,7 +75,7 @@ fun RestaurantHeader(
         // 2. Primary Address Line
         Text(
             text = data.addressLine1,
-            fontSize = 24.sp,
+            fontSize = 32.sp, // Increased for visibility
             fontWeight = FontWeight.Bold,
             color = Color.Black
         )
@@ -84,7 +84,7 @@ fun RestaurantHeader(
         data.addressLine2?.takeIf { it.isNotBlank() }?.let { line2 ->
             Text(
                 text = line2,
-                fontSize = 18.sp,
+                fontSize = 22.sp, // Increased for visibility
                 color = Color.DarkGray
             )
         }
@@ -96,7 +96,7 @@ fun RestaurantHeader(
 
         Text(
             text = cityLine,
-            fontSize = 18.sp,
+            fontSize = 22.sp, // Increased for visibility
             color = Color.Black
         )
 
@@ -107,7 +107,7 @@ fun RestaurantHeader(
 
         Text(
             text = regionLine,
-            fontSize = 18.sp,
+            fontSize = 22.sp, // Increased for visibility
             fontWeight = FontWeight.Medium,
             color = Color.Black
         )

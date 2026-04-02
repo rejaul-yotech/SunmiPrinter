@@ -1,5 +1,6 @@
 package com.yotech.valtprinter.ui.receipt
 
+import android.annotation.SuppressLint
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -9,6 +10,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Coffee
 import androidx.compose.material3.HorizontalDivider
@@ -31,7 +34,10 @@ import com.yotech.valtprinter.domain.model.orderdata.SubOrderItem
 import java.util.Locale
 
 @Composable
-fun PosPrintingScreen(data: BillingData) {
+fun PosPrintingScreen(
+    data: BillingData,
+    isScrollEnabled: Boolean = true
+) {
     // Grouping items by category for the "Premium Receipt" look!
     val groupedItems = remember(data.items) {
         data.items.groupBy { it.category }
@@ -45,10 +51,19 @@ fun PosPrintingScreen(data: BillingData) {
         )
     }
 
+    val scrollState = if (isScrollEnabled) rememberScrollState() else null
+
     Column(
         modifier = Modifier
             .width(576.dp)
             .background(Color.White)
+            .then(
+                if (isScrollEnabled && scrollState != null) {
+                    Modifier.verticalScroll(scrollState)
+                } else {
+                    Modifier
+                }
+            )
             .padding(vertical = 24.dp, horizontal = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -59,18 +74,18 @@ fun PosPrintingScreen(data: BillingData) {
 
         // 2. Transaction Metadata
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("Order: ${data.orderId}", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-            Text(data.orderType, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+            Text("Order: ${data.orderId}", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Text(data.orderType, fontSize = 20.sp, fontWeight = FontWeight.Medium)
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("Table: ${data.orderTag}", fontSize = 16.sp, color = Color.Black)
-            Text("Staff: ${data.staffName}", fontSize = 16.sp, color = Color.Gray)
+            Text("Table: ${data.orderTag}", fontSize = 20.sp, color = Color.Black)
+            Text("Staff: ${data.staffName}", fontSize = 20.sp, color = Color.Gray)
         }
 
         Text(
             text = "Printed at: $printTime",
-            fontSize = 14.sp,
-            color = Color.LightGray,
+            fontSize = 18.sp,
+            color = Color.Black,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(top = 4.dp),
@@ -84,7 +99,7 @@ fun PosPrintingScreen(data: BillingData) {
             // Category Header
             Text(
                 text = "--- $category ---",
-                fontSize = 18.sp,
+                fontSize = 24.sp,
                 fontWeight = FontWeight.ExtraBold,
                 color = Color.Black,
                 modifier = Modifier.padding(vertical = 8.dp)
@@ -97,7 +112,7 @@ fun PosPrintingScreen(data: BillingData) {
                 item.subItems.forEach { sub ->
                     Text(
                         text = " + ${sub.quantity}x ${sub.name}",
-                        fontSize = 14.sp,
+                        fontSize = 22.sp,
                         color = Color.DarkGray,
                         modifier = Modifier
                             .fillMaxWidth()
@@ -133,7 +148,7 @@ fun PosPrintingScreen(data: BillingData) {
 
         Text(
             text = "*--- THANK YOU ---*",
-            fontSize = 20.sp,
+            fontSize = 26.sp,
             fontWeight = FontWeight.Bold,
             color = Color.Black
         )
@@ -141,7 +156,7 @@ fun PosPrintingScreen(data: BillingData) {
         data.footerNote?.let { note ->
             Text(
                 text = note,
-                fontSize = 14.sp,
+                fontSize = 22.sp,
                 color = Color.DarkGray,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.padding(top = 8.dp)
@@ -150,6 +165,7 @@ fun PosPrintingScreen(data: BillingData) {
     }
 }
 
+@SuppressLint("DefaultLocale")
 @Composable
 fun BillItemRow(item: OrderItem) {
     Row(
@@ -161,13 +177,13 @@ fun BillItemRow(item: OrderItem) {
     ) {
         Text(
             text = "${item.quantity}x ${item.name}",
-            fontSize = 18.sp,
+            fontSize = 22.sp,
             fontWeight = FontWeight.Medium,
             modifier = Modifier.weight(1f)
         )
         Text(
             text = String.format("%.2f", item.unitPrice * item.quantity),
-            fontSize = 18.sp,
+            fontSize = 22.sp,
             fontWeight = FontWeight.Bold
         )
     }
@@ -183,12 +199,12 @@ fun FinancialSummaryRow(label: String, value: String, isBold: Boolean = false) {
     ) {
         Text(
             label,
-            fontSize = 18.sp,
+            fontSize = 22.sp,
             fontWeight = if (isBold) FontWeight.Bold else FontWeight.Normal
         )
         Text(
             value,
-            fontSize = 18.sp,
+            fontSize = 22.sp,
             fontWeight = if (isBold) FontWeight.Bold else FontWeight.Normal
         )
     }

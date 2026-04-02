@@ -22,13 +22,13 @@ fun BillItemRow(item: OrderItem) {
     ) {
         Text(
             text = "${item.quantity}x ${item.name}",
-            fontSize = 18.sp,
+            fontSize = 22.sp, // Increased for visibility
             fontWeight = FontWeight.Medium,
             modifier = Modifier.weight(1f)
         )
         Text(
             text = String.format("%.2f", item.unitPrice * item.quantity),
-            fontSize = 18.sp,
+            fontSize = 22.sp, // Increased for visibility
             fontWeight = FontWeight.Bold
         )
     }
@@ -37,10 +37,20 @@ fun BillItemRow(item: OrderItem) {
 @Composable
 fun FinancialSummaryRow(label: String, value: String, isBold: Boolean = false) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp),
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Text(label, fontSize = 18.sp, fontWeight = if (isBold) FontWeight.Bold else FontWeight.Normal)
-        Text(value, fontSize = 18.sp, fontWeight = if (isBold) FontWeight.Bold else FontWeight.Normal)
+        Text(
+            label,
+            fontSize = if (isBold) 28.sp else 22.sp, // Much larger for Grand Total
+            fontWeight = if (isBold) FontWeight.Bold else FontWeight.Normal
+        )
+        Text(
+            value,
+            fontSize = if (isBold) 28.sp else 22.sp, // Much larger for Grand Total
+            fontWeight = if (isBold) FontWeight.Bold else FontWeight.Normal
+        )
     }
 }
