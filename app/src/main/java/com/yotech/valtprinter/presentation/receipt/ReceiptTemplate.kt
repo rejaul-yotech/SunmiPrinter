@@ -1,12 +1,19 @@
 package com.yotech.valtprinter.presentation.receipt
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Print
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -36,12 +43,28 @@ fun ReceiptTemplate(data: ReceiptData) {
             .padding(20.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(
-            text = "VALT KITCHEN",
-            fontSize = 24.sp,
-            fontWeight = FontWeight.Bold,
-            color = Color.Black
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = "VALT KITCHEN",
+                fontSize = 28.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.Black
+            )
+
+            Spacer(Modifier.width(8.dp))
+
+            Icon(
+                imageVector = Icons.Default.Print,
+                contentDescription = null,
+                modifier = Modifier.size(32.dp),
+                tint = Color.Black
+            )
+        }
+
         Spacer(Modifier.height(8.dp))
         HorizontalDivider(thickness = 2.dp, color = Color.Black)
         Spacer(Modifier.height(24.dp))
@@ -58,22 +81,22 @@ fun ReceiptTemplate(data: ReceiptData) {
             fontSize = 18.sp,
             color = Color.Black
         )
-        Spacer(Modifier.height(40.dp))
+        Spacer(Modifier.height(24.dp))
 
         data.items.forEach { item ->
             Text(
                 text = item,
-                fontSize = 16.sp,
+                fontSize = 24.sp,
                 color = Color.Black,
                 fontWeight = FontWeight.Medium
             )
             Spacer(Modifier.height(8.dp))
         }
 
-        Spacer(Modifier.height(32.dp))
+        Spacer(Modifier.height(24.dp))
         Text(
             text = "*--- END OF TICKET ---*",
-            fontSize = 14.sp,
+            fontSize = 24.sp,
             color = Color.Black
         )
     }

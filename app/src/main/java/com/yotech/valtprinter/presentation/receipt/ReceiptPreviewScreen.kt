@@ -69,7 +69,7 @@ fun ReceiptPreviewScreen(
     }
 
     val receiptData = remember {
-        ReceiptData("ORDER #404", "Md. Rejaul Karim", listOf("1x Burger", "1x Soda"))
+        ReceiptData("ORDER #404", "Md. Rejaul Karim", listOf("1x Burger", "2x Fries", "1x Coke"))
     }
 
     Scaffold(
