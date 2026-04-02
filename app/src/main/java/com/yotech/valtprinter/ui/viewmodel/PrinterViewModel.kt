@@ -1,4 +1,4 @@
-package com.yotech.valtprinter.presentation.viewmodel
+package com.yotech.valtprinter.ui.viewmodel
 
 import android.graphics.Bitmap
 import androidx.lifecycle.ViewModel
@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.yotech.valtprinter.domain.model.PrintResult
 import com.yotech.valtprinter.domain.model.PrinterDevice
 import com.yotech.valtprinter.domain.model.PrinterState
+import com.yotech.valtprinter.domain.repository.PrinterRepository
 import com.yotech.valtprinter.domain.usecase.AutoConnectUsbUseCase
 import com.yotech.valtprinter.domain.usecase.ConnectToPrinterUseCase
 import com.yotech.valtprinter.domain.usecase.DisconnectPrinterUseCase
@@ -28,7 +29,7 @@ class PrinterViewModel @Inject constructor(
     private val disconnectUseCase: DisconnectPrinterUseCase,
     private val autoConnectUsbUseCase: AutoConnectUsbUseCase,
     private val printReceiptUseCase: PrintReceiptUseCase,
-    repository: com.yotech.valtprinter.domain.repository.PrinterRepository
+    repository: PrinterRepository
 ) : ViewModel() {
 
     val printerState: StateFlow<PrinterState> = repository.printerState

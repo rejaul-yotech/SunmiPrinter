@@ -1,4 +1,4 @@
-package com.yotech.valtprinter.presentation.receipt
+package com.yotech.valtprinter.ui.receipt
 
 import android.graphics.Bitmap
 import android.widget.Toast
@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
@@ -34,12 +35,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yotech.valtprinter.core.util.BitmapRenderer
 import com.yotech.valtprinter.domain.model.PrintResult
 import com.yotech.valtprinter.domain.model.ReceiptData
-import com.yotech.valtprinter.presentation.viewmodel.PrinterViewModel
+import com.yotech.valtprinter.ui.viewmodel.PrinterViewModel
 import com.yotech.valtprinter.ui.theme.CyanElectric
 import kotlinx.coroutines.launch
 
@@ -106,7 +108,7 @@ fun ReceiptPreviewScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            val view = androidx.compose.ui.platform.LocalView.current
+            val view = LocalView.current
             Button(
                 onClick = {
                     isPrinting = true
@@ -121,7 +123,7 @@ fun ReceiptPreviewScreen(
                     .fillMaxWidth()
                     .navigationBarsPadding()
                     .height(56.dp),
-                shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = CyanElectric),
                 enabled = !isPrinting
             ) {

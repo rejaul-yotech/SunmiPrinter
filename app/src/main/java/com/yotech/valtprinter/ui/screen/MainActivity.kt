@@ -1,4 +1,4 @@
-package com.yotech.valtprinter.presentation.ui
+package com.yotech.valtprinter.ui.screen
 
 import android.Manifest
 import android.content.Intent
@@ -29,8 +29,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import com.yotech.valtprinter.presentation.receipt.ReceiptPreviewScreen
-import com.yotech.valtprinter.presentation.viewmodel.PrinterViewModel
+import com.yotech.valtprinter.ui.receipt.ReceiptPreviewScreen
+import com.yotech.valtprinter.ui.viewmodel.PrinterViewModel
 import com.yotech.valtprinter.ui.theme.ValtPrinterTheme
 import dagger.hilt.android.AndroidEntryPoint
 

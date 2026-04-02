@@ -1,11 +1,13 @@
-package com.yotech.valtprinter.presentation.ui
+package com.yotech.valtprinter.ui.screen
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -44,13 +46,15 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yotech.valtprinter.domain.model.ConnectionType
 import com.yotech.valtprinter.domain.model.PrinterDevice
 import com.yotech.valtprinter.domain.model.PrinterState
-import com.yotech.valtprinter.presentation.viewmodel.PrinterViewModel
+import com.yotech.valtprinter.ui.viewmodel.PrinterViewModel
 import com.yotech.valtprinter.ui.theme.CyanElectric
 import com.yotech.valtprinter.ui.theme.NavySurface
 import com.yotech.valtprinter.ui.theme.VioletElectric
@@ -218,7 +222,7 @@ fun ConnectedStateView(
                             .align(Alignment.BottomEnd)
                             .padding(2.dp)
                             .clip(CircleShape)
-                            .background(androidx.compose.ui.graphics.Color.Green)
+                            .background(Color.Green)
                     )
                 }
 
@@ -228,7 +232,7 @@ fun ConnectedStateView(
                     text = "PRINTER CONNECTED",
                     style = MaterialTheme.typography.labelMedium,
                     color = CyanElectric,
-                    letterSpacing = androidx.compose.ui.unit.TextUnit.Unspecified
+                    letterSpacing = TextUnit.Unspecified
                 )
 
                 Text(
@@ -275,7 +279,7 @@ fun ConnectedStateView(
                 .height(56.dp),
             shape = RoundedCornerShape(12.dp),
             colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-            border = androidx.compose.foundation.BorderStroke(
+            border = BorderStroke(
                 1.dp,
                 MaterialTheme.colorScheme.error.copy(alpha = 0.5f)
             )
@@ -311,7 +315,7 @@ fun ErrorStateView(message: String, onRetry: () -> Unit) {
 
 @Composable
 fun RowHeader(title: String, onAction: () -> Unit, actionText: String) {
-    androidx.compose.foundation.layout.Row(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 8.dp),
