@@ -16,15 +16,15 @@ This document tracks the execution progress of the ValtPrinter "Gold Standard" p
     - `[x]` Configure `PrinterDataStore` for paper height heuristics.
 
 ## 2. Phase 1: IPC & Data Governance (The Foundation)
-- `[ ]` **AIDL Interface Configuration (`IPrinterService`)**: Build the multi-threaded bridge for Link App requests.
-- `[ ]` **Room Database Initialization**: Create `PrintQueue` and `PrintLog` entities with `Job_ID`, `Priority`, and `JSON_Payload`.
-- `[ ]` **The Handshake Protocol**: Logic returning the `TransactionToken` back to the Link App immediately upon saving to Room DB.
-- `[ ]` **DataStore Configuration**: Set up User Preferences for TTL Intervals (1 week, 2 weeks, never, etc.).
+- `[/]` **AIDL Interface Configuration (`IPrinterService`)**: Build the multi-threaded bridge for Link App requests.
+- `[x]` **Room Database Initialization**: Create `PrintQueue` and `PrintLog` entities with `Job_ID`, `Priority`, and `JSON_Payload`.
+- `[/]` **The Handshake Protocol**: Logic returning the `TransactionToken` back to the Link App immediately upon saving to Room DB.
+- `[x]` **DataStore Configuration**: Set up User Preferences for TTL Intervals (1 week, 2 weeks, never, etc.).
 
 ## 3. Phase 2: The Concurrency Engine (Zero-Loss Queue)
-- `[ ]` **The `QueueDispatcher` Background Worker**: Infinite coroutine loop reading Room DB.
-- `[ ]` **Priority Algorithm SQL Validation**: Ensure Priority items jump instantly to the absolute next slot.
-- `[ ]` **Sticky Foreground Service**: Persistent servant process to prevent OS process reclaiming.
+- `[/]` **The `QueueDispatcher` Background Worker**: Infinite coroutine loop reading Room DB.
+- `[x]` **Priority Algorithm SQL Validation**: Ensure Priority items jump instantly to the absolute next slot.
+- `[x]` **Sticky Foreground Service**: Persistent servant process to prevent OS process reclaiming.
 
 ## 4. Phase 3: Hardware Integration & Safe Rendering
 - `[x]` **Sunmi SDK Implementation**: Core integration with Sunmi External Printer Library.

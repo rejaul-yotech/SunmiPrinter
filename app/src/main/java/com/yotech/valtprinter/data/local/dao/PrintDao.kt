@@ -45,6 +45,9 @@ interface PrintDao {
     @Query("SELECT COUNT(*) FROM print_queue WHERE status = 'PENDING' OR status = 'PROCESSING' OR status = 'INTERRUPTED'")
     fun getQueueCountFlow(): Flow<Int>
 
+    @Query("SELECT COUNT(*) FROM print_queue WHERE status = 'PENDING' OR status = 'PROCESSING' OR status = 'INTERRUPTED'")
+    suspend fun getQueueCount(): Int
+
     @Query("DELETE FROM print_queue WHERE status = 'COMPLETED' AND updated_at < :timestamp")
     suspend fun deleteOldLogs(timestamp: Long)
 

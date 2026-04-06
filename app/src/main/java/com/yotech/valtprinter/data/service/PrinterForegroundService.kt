@@ -9,6 +9,8 @@ import androidx.core.app.ServiceCompat
 import com.yotech.valtprinter.core.util.NotificationHelper
 import com.yotech.valtprinter.data.queue.QueueDispatcher
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
@@ -20,6 +22,44 @@ class PrinterForegroundService : Service() {
 
     @Inject
     lateinit var queueDispatcher: QueueDispatcher
+
+    @Inject
+    lateinit var printDao: com.yotech.valtprinter.data.local.dao.PrintDao
+
+    private val serviceScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO + kotlinx.coroutines.SupervisorJob())
+
+    private val binder = object : com.yotech.valtprinter.IPrinterService.Stub() {
+        override fun submitPrintJob(jobId: String?, payloadJson: String?, isPriority: Boolean): String? {
+            if (jobId == null || payloadJson == null) return null
+            
+            return kotlinx.coroutines.runBlocking {
+                // Idempotency check
+                val existing = printDao.getJobByExternalId(jobId)
+                if (existing != null) return@runBlocking "EXISTING_${existing.id}"
+
+                val entity = com.yotech.valtprinter.data.local.entity.PrintJobEntity(
+                    externalJobId = jobId,
+                    payloadJson = payloadJson,
+                    isPriority = isPriority,
+                    status = com.yotech.valtprinter.data.local.entity.PrintStatus.PENDING
+                )
+                val id = printDao.insertPrintJob(entity)
+                if (id > 0) "VALT_TX_$id" else null
+            }
+        }
+
+        override fun getQueueCount(): Int {
+            return kotlinx.coroutines.runBlocking {
+                printDao.getQueueCount()
+            }
+        }
+
+        override fun clearCompletedLogs() {
+            serviceScope.launch {
+                printDao.deleteOldLogs(System.currentTimeMillis())
+            }
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -48,8 +88,9 @@ class PrinterForegroundService : Service() {
 
     override fun onDestroy() {
         queueDispatcher.stop()
+        serviceScope.cancel()
         super.onDestroy()
     }
 
-    override fun onBind(intent: Intent?): IBinder? = null
+    override fun onBind(intent: Intent?): IBinder = binder
 }

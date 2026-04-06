@@ -14,11 +14,13 @@ hilt = "2.59.2"
 ksp = "2.3.6"
 
 hiltNavigationCompose = "1.3.0"
+hiltWork = "1.2.0"
 
 gson = "2.13.2"
 materialIconsExtended = "1.7.8"
 room = "2.7.0"
 datastore = "1.1.1"
+work = "2.10.0"
 
 [libraries]
 androidx-compose-material-icons-extended = { module = "androidx.compose.material:material-icons-extended", version.ref = "materialIconsExtended" }
@@ -47,6 +49,8 @@ kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutine
 hilt = { group = "com.google.dagger", name = "hilt-android", version.ref = "hilt" }
 hilt-compiler = { group = "com.google.dagger", name = "hilt-android-compiler", version.ref = "hilt" }
 androidx-hilt-navigation-compose = { module = "androidx.hilt:hilt-navigation-compose", version.ref = "hiltNavigationCompose" }
+androidx-hilt-work = { group = "androidx.hilt", name = "hilt-work", version.ref = "hiltWork" }
+hilt-work-compiler = { group = "androidx.hilt", name = "hilt-compiler", version.ref = "hiltWork" }
 
 #Gson
 gson = { group = "com.google.code.gson", name = "gson", version.ref = "gson" }
@@ -58,6 +62,9 @@ androidx-room-compiler = { group = "androidx.room", name = "room-compiler", vers
 
 #DataStore
 androidx-datastore-preferences = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "datastore" }
+
+#WorkManager
+androidx-work-runtime-ktx = { group = "androidx.work", name = "work-runtime-ktx", version.ref = "work" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

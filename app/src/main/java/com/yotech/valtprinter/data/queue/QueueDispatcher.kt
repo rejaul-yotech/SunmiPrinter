@@ -45,6 +45,13 @@ class QueueDispatcher @Inject constructor(
                         continue
                     }
 
+                    // 0. Global Pause Check
+                    if (printerDataStore.isPrinterPaused()) {
+                        NotificationHelper.updateNotification(serviceContext, "Queue Paused (Manual/Auto)", 0)
+                        delay(5000)
+                        continue
+                    }
+
                     // 1. Initial State Check (Heuristics)
                     val printer = printerRepository.getActiveCloudPrinter()
                     if (printer == null) {
@@ -57,6 +64,7 @@ class QueueDispatcher @Inject constructor(
                     val billingData = try {
                         gson.fromJson(nextJob.payloadJson, com.yotech.valtprinter.domain.model.orderdata.BillingData::class.java)
                     } catch (e: Exception) {
+                        Log.e("QUEUE_SERVER", "Malformed JSON for Job ${nextJob.id}: ${e.message}")
                         printDao.updateStatus(nextJob.id, PrintStatus.FAILED)
                         continue
                     }

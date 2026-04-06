@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -35,6 +36,14 @@ class PrinterDataStore @Inject constructor(@ApplicationContext private val conte
 
     val logTtlDaysFlow: Flow<Int> = context.dataStore.data.map { preferences ->
         preferences[PreferencesKeys.LOG_TTL_DAYS] ?: 30 // Default 30 days
+    }
+
+    suspend fun isPrinterPaused(): Boolean {
+        return context.dataStore.data.map { it[PreferencesKeys.IS_PRINTER_PAUSED] ?: false }.first()
+    }
+
+    suspend fun getLogTtlDays(): Int {
+        return context.dataStore.data.map { it[PreferencesKeys.LOG_TTL_DAYS] ?: 30 }.first()
     }
 
     suspend fun updateAccumulatedHeight(height: Int) {
