@@ -55,12 +55,30 @@ Our app is a system-level servant. It must be unshakeable:
 
 ---
 
-## 6. Naming Conventions & Code Style
-*   **Mappers**: `ToDomain()`, `ToEntity()`, `ToDto()`.
-*   **UseCases**: Named as verbs: `ProcessPrintQueueUseCase`.
-*   **UI States**: Named as `[Feature]UiState`. 
-*   **Constants**: Use `object` or `companion object` with `const val UPPER_SNAKE_CASE`.
+## 6. Testing Strategy: "Zero-Bug" Commitment
+Quality is not an afterthought; it is built-in:
+*   **Unit Tests**: Every UseCase and Mapper MUST have 100% branch coverage. Use `MockK` or `Turbine` for Flow testing.
+*   **Domain Isolation**: UseCases must be tested without any Android dependency (using `Mockk` for Repository interfaces).
+*   **Integration Tests**: Test the Room Database and DataStore consistency in the `androidTest` source set.
 
-## 7. Zero Downtime Commitment
-*   Implement **Sticky Foreground Services** to ensure Android does not kill the server.
-*   All asynchronous loops (Queue Dispatchers) must be wrapped in `try-catch` within the loop to prevent the entire thread from dying due to a single bad payload.
+---
+
+## 7. Explicit Mapping & Scalability Architecture
+To prevent "Model Leaking" (where local DB changes break-remote UI), we enforce **Strict DTO-to-Domain isolation**:
+*   **No Entity Leaks**: Never pass a Room `@Entity` to the UI layer. Convert to a Domain model first.
+*   **No Payload Leaks**: JSON DTOs from the AIDL bridge must be mapped to Domain Models inside the Data Layer.
+*   **Transformation Logic**: Mappers must be kept in the `data/mapper` package and remain pure, deterministic functions.
+
+---
+
+## 8. Readability & Documentation (Elite Standards)
+*   **KDoc Everything**: All public interfaces, classes, and UseCase `invoke()` methods must have KDoc explaining the *why*, not just the *what*.
+*   **Explicit Returns**: Always specify the return type of a public function. Do not rely on Kotlin type inference for the public API surface.
+*   **Meaningful Naming**: Avoid abbreviations. Use `processedReceiptCount` instead of `pc`.
+
+---
+
+## 9. Zero Downtime & Resilience
+*   **Sticky Foreground Services**: Ensure the Android OS does not kill the server by maintaining a persistent notification.
+*   **The Loop Safety Guard**: All asynchronous loops (Queue Dispatchers) must be wrapped in `try-catch` *within* the loop block to prevent the entire thread from dying due to a single malformed payload.
+*   **Storage Sentinel**: Implement proactive disk-space checks to avoid DB corruption.
