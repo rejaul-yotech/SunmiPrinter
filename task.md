@@ -38,9 +38,9 @@ This document tracks the execution progress of the ValtPrinter "Gold Standard" p
 - `[x]` **The Double-Approval Broadcast**: Real-time exact success callbacks to the Link App.
 
 ## 6. Phase 5: The Control Center & Background Work
-- `[/]` **Control Center UI**: Dashboard exists, but needs integration with the live Room queue.
-- `[ ]` **Alarm Override System**: Audio/Visual high-priority alerts for hardware emergencies.
-- `[ ]` **WorkManager Automation**: TTL Garbage Collection and Storage Sentinel tasks.
+- `[x]` **Control Center UI**: Dashboard integrated with the live Room queue.
+- `[x]` **Alarm Override System**: Audio/Visual high-priority alerts with Vibrate & Silence mechanics.
+- `[x]` **WorkManager Automation**: TTL Garbage Collection and Storage Sentinel tasks.
 
 ## 7. Elite Architectural Refactoring
 - `[x]` **StateFlow/SharedFlow Migration**: Upgraded ViewModel events to `SharedFlow` with `onBufferOverflow = DROP_OLDEST`.
