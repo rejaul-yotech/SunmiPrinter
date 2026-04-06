@@ -9,7 +9,7 @@ This document tracks the execution progress of the ValtPrinter "Gold Standard" p
 - `[x]` **MVVM Pattern**: ViewModels decoupling State from UI.
 - `[x]` **Kotlin Coroutines & Flow**: Used for non-blocking asynchronous processing and state observation.
 - `[x]` **Dependency Injection (Hilt/Dagger)**: Full dependency graph management.
-- `[ ]` **Persistence Layer (Room/DataStore)**: Persistent queue and settings management.
+- `[/]` **Persistence Layer (Room/DataStore)**: Persistent queue and settings management.
 
 ## 2. Phase 1: IPC & Data Governance (The Foundation)
 - `[ ]` **AIDL Interface Configuration (`IPrinterService`)**: Build the multi-threaded bridge for Link App requests.
