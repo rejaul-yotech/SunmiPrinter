@@ -33,9 +33,9 @@ This document tracks the execution progress of the ValtPrinter "Gold Standard" p
 - `[x]` **OOM & Chunking Loop Protocol**: Logic to split long receipts into bite-sized Bitmaps incrementally.
 
 ## 5. Phase 4: Resilience & Auto-Healing
-- `[ ]` **Hardware Disaster Rules (Paper/Power)**: Halt `QueueDispatcher` on fail codes, preserve DB State.
-- `[ ]` **Resumption Hook**: Auto-restart logic upon Boot or upon Sunmi Paper Sensor Refill trigger.
-- `[ ]` **The Double-Approval Broadcast**: Real-time exact success callbacks to the Link App.
+- `[x]` **Hardware Disaster Rules (Paper/Power)**: Halt `QueueDispatcher` on fail codes, preserve DB State.
+- `[x]` **Resumption Hook**: Auto-restart logic upon Boot or upon Sunmi Paper Sensor Refill trigger.
+- `[x]` **The Double-Approval Broadcast**: Real-time exact success callbacks to the Link App.
 
 ## 6. Phase 5: The Control Center & Background Work
 - `[/]` **Control Center UI**: Dashboard exists, but needs integration with the live Room queue.

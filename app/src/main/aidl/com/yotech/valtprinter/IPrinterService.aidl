@@ -1,5 +1,7 @@
 package com.yotech.valtprinter;
 
+import com.yotech.valtprinter.IPrinterCallback;
+
 /**
  * The core IPC interface for the ValtPrinter "Gold Standard" Server.
  * Allows external Link Apps to submit print jobs and query status.
@@ -23,4 +25,14 @@ interface IPrinterService {
      * Clear all completed print logs from the database.
      */
     void clearCompletedLogs();
+
+    /**
+     * Register a callback listener to receive deterministic print job success or failure.
+     */
+    void registerCallback(IPrinterCallback callback);
+
+    /**
+     * Unregister a previously attached callback listener.
+     */
+    void unregisterCallback(IPrinterCallback callback);
 }

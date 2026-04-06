@@ -28,6 +28,9 @@ class QueueDispatcher @Inject constructor(
     @Inject
     lateinit var payloadParser: com.yotech.valtprinter.domain.util.PayloadParser
 
+    @Inject
+    lateinit var callbackManager: com.yotech.valtprinter.domain.util.PrinterCallbackManager
+
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var dispatcherJob: Job? = null
     private val CHUNK_SIZE_PX = 400 // Atomic slice height for persistence
@@ -127,6 +130,7 @@ class QueueDispatcher @Inject constructor(
                     if (isFinished) {
                         printerRepository.finalCut() 
                         printDao.updateStatus(nextJob.id, PrintStatus.COMPLETED)
+                        callbackManager.notifySuccess(nextJob.externalJobId)
                     } else if (lastError?.contains("Paper Out", ignoreCase = true) == true) {
                         // "Elite" Policy: On Paper-Out mid-print, mark for Full Reprint
                         printDao.updateChunkProgress(nextJob.id, 0) // Reset progress
@@ -135,6 +139,7 @@ class QueueDispatcher @Inject constructor(
                         suspendQueue()
                     } else {
                         printDao.updateStatus(nextJob.id, PrintStatus.FAILED)
+                        callbackManager.notifyFailed(nextJob.externalJobId, lastError ?: "Unknown physical hardware error")
                     }
 
                 } catch (e: Exception) {

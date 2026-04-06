@@ -26,6 +26,14 @@ class PrinterForegroundService : Service() {
     @Inject
     lateinit var printDao: com.yotech.valtprinter.data.local.dao.PrintDao
 
+    @Inject
+    lateinit var callbackManager: com.yotech.valtprinter.domain.util.PrinterCallbackManager
+
+    @Inject
+    lateinit var printerDataStore: com.yotech.valtprinter.data.local.datastore.PrinterDataStore
+
+    private lateinit var sunmiReceiver: com.yotech.valtprinter.data.receiver.SunmiPrinterReceiver
+
     private val serviceScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO + kotlinx.coroutines.SupervisorJob())
 
     private val binder = object : com.yotech.valtprinter.IPrinterService.Stub() {
@@ -59,10 +67,36 @@ class PrinterForegroundService : Service() {
                 printDao.deleteOldLogs(System.currentTimeMillis())
             }
         }
+
+        override fun registerCallback(callback: com.yotech.valtprinter.IPrinterCallback?) {
+            if (callback != null) callbackManager.list.register(callback)
+        }
+
+        override fun unregisterCallback(callback: com.yotech.valtprinter.IPrinterCallback?) {
+            if (callback != null) callbackManager.list.unregister(callback)
+        }
     }
 
     override fun onCreate() {
         super.onCreate()
+        
+        sunmiReceiver = com.yotech.valtprinter.data.receiver.SunmiPrinterReceiver(printerDataStore)
+        val filter = android.content.IntentFilter().apply {
+            addAction("woyou.aidlservice.jiuv5.OUT_OF_PAPER_ACTION")
+            addAction("com.sunmi.extprinterservice.OUT_OF_PAPER_ACTION")
+            addAction("woyou.aidlservice.jiuv5.COVER_OPEN_ACTION")
+            addAction("com.sunmi.extprinterservice.COVER_OPEN_ACTION")
+            addAction("woyou.aidlservice.jiuv5.OVER_HEATING_ACITON")
+            addAction("com.sunmi.extprinterservice.HOT_ACTION")
+            addAction("woyou.aidlservice.jiuv5.NORMAL_ACTION")
+            addAction("com.sunmi.extprinterservice.NORMAL_ACTION")
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(sunmiReceiver, filter, android.content.Context.RECEIVER_EXPORTED)
+        } else {
+            registerReceiver(sunmiReceiver, filter)
+        }
+
         NotificationHelper.createNotificationChannel(this)
         val notification = NotificationHelper.getServiceNotification(this)
 
@@ -89,6 +123,8 @@ class PrinterForegroundService : Service() {
     override fun onDestroy() {
         queueDispatcher.stop()
         serviceScope.cancel()
+        unregisterReceiver(sunmiReceiver)
+        callbackManager.list.kill()
         super.onDestroy()
     }
 
