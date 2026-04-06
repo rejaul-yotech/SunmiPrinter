@@ -47,7 +47,12 @@ object BitmapRenderer {
 
             withContext(Dispatchers.Main) {
                 composeView.draw(canvas)
-                (parentView.rootView as? ViewGroup)?.removeView(composeView)
+                val wrapper = composeView.tag as? View
+                if (wrapper != null) {
+                    (parentView.rootView as? ViewGroup)?.removeView(wrapper)
+                } else {
+                    (parentView.rootView as? ViewGroup)?.removeView(composeView)
+                }
             }
             bitmap
         }
@@ -61,8 +66,6 @@ object BitmapRenderer {
         content: @Composable () -> Unit
     ): Triple<Int, Int, ComposeView> = withContext(Dispatchers.Main) {
         val view = ComposeView(parentView.context).apply {
-            alpha = 0f
-            translationX = 5000f
             setViewTreeLifecycleOwner(parentView.findViewTreeLifecycleOwner())
             setViewTreeViewModelStoreOwner(parentView.findViewTreeViewModelStoreOwner())
             setViewTreeSavedStateRegistryOwner(parentView.findViewTreeSavedStateRegistryOwner())
@@ -77,7 +80,15 @@ object BitmapRenderer {
             layoutParams = ViewGroup.LayoutParams(576, ViewGroup.LayoutParams.WRAP_CONTENT)
         }
 
-        (parentView.rootView as? ViewGroup)?.addView(view)
+        // The Elite Fix: Wrap in a ScrollView to prevent Android WindowManager
+        // from hardware-clipping the ComposeView to the device's physical screen boundaries.
+        val wrapper = android.widget.ScrollView(parentView.context).apply {
+            alpha = 0f
+            translationX = 5000f
+            addView(view)
+        }
+
+        (parentView.rootView as? ViewGroup)?.addView(wrapper)
         
         val measureSpecWidth = View.MeasureSpec.makeMeasureSpec(576, View.MeasureSpec.EXACTLY)
         val measureSpecHeight = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
@@ -86,6 +97,9 @@ object BitmapRenderer {
         val w = view.measuredWidth
         val h = view.measuredHeight
         view.layout(0, 0, w, h)
+
+        // Store the wrapper so the renderer can clean it up effectively
+        view.tag = wrapper
 
         Triple(w, h, view)
     }
@@ -103,7 +117,12 @@ object BitmapRenderer {
 
             withContext(Dispatchers.Main) {
                 composeView.draw(canvas)
-                (parentView.rootView as? ViewGroup)?.removeView(composeView)
+                val wrapper = composeView.tag as? View
+                if (wrapper != null) {
+                    (parentView.rootView as? ViewGroup)?.removeView(wrapper)
+                } else {
+                    (parentView.rootView as? ViewGroup)?.removeView(composeView)
+                }
             }
             bitmap
         }
