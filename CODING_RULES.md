@@ -86,3 +86,9 @@ To prevent "Model Leaking" (where local DB changes break-remote UI), we enforce 
 *   **Sticky Foreground Services**: Ensure the Android OS does not kill the server by maintaining a persistent notification.
 *   **The Loop Safety Guard**: All asynchronous loops (Queue Dispatchers) must be wrapped in `try-catch` *within* the loop block to prevent the entire thread from dying due to a single malformed payload.
 *   **Storage Sentinel**: Implement proactive disk-space checks to avoid DB corruption.
+
+---
+
+## 10. AI Assistant & Implementation Protocol (MANDATORY RULE)
+*   **Clarification First**: If a user request lacks clarity, misses critical direction, or relies on assumptions, the AI Assistant MUST STOP AND ASK QUESTIONS before writing or modifying any implementation code. It is mandatory to seek clarification first to prevent architectural drift.
+*   **Rule Validation**: Every code implementation MUST strictly follow all the rules defined in this `CODING_RULES.md` document without exception.
