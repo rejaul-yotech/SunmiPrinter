@@ -20,8 +20,13 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+
 
 @HiltViewModel
 class PrinterViewModel @Inject constructor(
@@ -31,7 +36,9 @@ class PrinterViewModel @Inject constructor(
     private val disconnectUseCase: DisconnectPrinterUseCase,
     private val autoConnectUsbUseCase: AutoConnectUsbUseCase,
     private val printReceiptUseCase: PrintReceiptUseCase,
-    repository: PrinterRepository
+    repository: PrinterRepository,
+    private val printDao: com.yotech.valtprinter.data.local.dao.PrintDao,
+    private val printerDataStore: com.yotech.valtprinter.data.local.datastore.PrinterDataStore
 ) : ViewModel() {
 
     val printerState: StateFlow<PrinterState> = repository.printerState
@@ -43,10 +50,33 @@ class PrinterViewModel @Inject constructor(
     )
     val printStatus: SharedFlow<PrintStatus> = _printStatus.asSharedFlow()
 
+    val recentPrintJobs: StateFlow<List<com.yotech.valtprinter.data.local.entity.PrintJobEntity>> = printDao.getRecentJobsFlow()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val isHardwareFault: StateFlow<Boolean> = printerDataStore.isPrinterPausedFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    private val _isAlarmAcknowledged = MutableStateFlow(true)
+    val isAlarmAcknowledged: StateFlow<Boolean> = _isAlarmAcknowledged.asStateFlow()
+
+
     init {
         _printStatus.tryEmit(PrintStatus.Idle)
+        
+        viewModelScope.launch {
+            isHardwareFault.collect { fault ->
+                if (fault) {
+                    _isAlarmAcknowledged.value = false
+                }
+            }
+        }
+
         // Attempt to auto Connect USB immediately upon boot up
         onUsbAttached()
+    }
+
+    fun acknowledgeAlarm() {
+        _isAlarmAcknowledged.value = true
     }
 
     fun onUsbAttached() {

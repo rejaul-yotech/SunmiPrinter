@@ -41,8 +41,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.platform.LocalContext
+import com.yotech.valtprinter.core.util.AlarmHelper
+import com.yotech.valtprinter.data.local.entity.PrintJobEntity
+
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -67,16 +73,31 @@ fun PrinterScreen(
     val state by viewModel.printerState.collectAsStateWithLifecycle()
     val devices by viewModel.discoveredDevices.collectAsStateWithLifecycle()
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .statusBarsPadding()
-            .navigationBarsPadding()
-            .padding(horizontal = 24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text(
+    val isHardwareFault by viewModel.isHardwareFault.collectAsStateWithLifecycle()
+    val isAlarmAcknowledged by viewModel.isAlarmAcknowledged.collectAsStateWithLifecycle()
+    val recentJobs by viewModel.recentPrintJobs.collectAsStateWithLifecycle()
+
+    val context = LocalContext.current
+
+    LaunchedEffect(isHardwareFault, isAlarmAcknowledged) {
+        if (isHardwareFault && !isAlarmAcknowledged) {
+            AlarmHelper.startAlarmAndVibration(context)
+        } else {
+            AlarmHelper.stopAlarmAndVibration(context)
+        }
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .padding(horizontal = 24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
             text = "Sunmi Cloud Printer",
             style = MaterialTheme.typography.headlineMedium,
             color = MaterialTheme.colorScheme.onBackground
@@ -103,6 +124,7 @@ fun PrinterScreen(
 
                 is PrinterState.Connected -> ConnectedStateView(
                     device = currentState.device,
+                    recentJobs = recentJobs,
                     onPreviewClick = onNavigateToPreview,
                     onDisconnect = viewModel::disconnect
                 )
@@ -112,9 +134,18 @@ fun PrinterScreen(
                     onRetry = viewModel::startDiscovery
                 )
             }
+        } // End AnimatedContent
+        } // End Column
+
+        // Top-level Box layer: ALARM OVERLAY
+        if (isHardwareFault) {
+            AlarmOverlay(
+                isAcknowledged = isAlarmAcknowledged,
+                onAcknowledge = { viewModel.acknowledgeAlarm() }
+            )
         }
-    }
-}
+    } // End Box
+} // End fun
 
 @Composable
 fun IdleStateView(onScan: () -> Unit) {
@@ -185,10 +216,11 @@ fun ConnectingStateView(deviceName: String) {
 @Composable
 fun ConnectedStateView(
     device: PrinterDevice,
+    recentJobs: List<PrintJobEntity>,
     onPreviewClick: () -> Unit,
     onDisconnect: () -> Unit
 ) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxSize()) {
         Card(
             colors = CardDefaults.cardColors(containerColor = NavySurface),
             shape = RoundedCornerShape(16.dp),
@@ -256,7 +288,27 @@ fun ConnectedStateView(
             }
         }
 
-        Spacer(Modifier.height(40.dp))
+        Spacer(Modifier.height(16.dp))
+
+        // Display recent jobs dynamically from Room
+        if (recentJobs.isNotEmpty()) {
+            Text("Recent Activity (${recentJobs.size})", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 8.dp))
+            LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                items(recentJobs, key = { it.id }) { job ->
+                    ListItem(
+                        headlineContent = { Text("Job: ${job.externalJobId ?: "Manual"} - Chunk ${job.currentChunkIndex}") },
+                        supportingContent = { Text("Status: ${job.status.name}") },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                    )
+                    HorizontalDivider()
+                }
+            }
+        } else {
+            Spacer(Modifier.weight(1f))
+        }
+
+        Spacer(Modifier.height(16.dp))
+
 
         Button(
             onClick = onPreviewClick,
@@ -367,3 +419,39 @@ fun DeviceListItem(device: PrinterDevice, onClick: () -> Unit) {
         modifier = Modifier.clickable { onClick() }
     )
 }
+
+@Composable
+fun AlarmOverlay(isAcknowledged: Boolean, onAcknowledge: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Red.copy(alpha = if (isAcknowledged) 0.8f else 0.5f))
+            .clickable(enabled = false) {}, // Intercept taps
+        contentAlignment = Alignment.Center
+    ) {
+        Card(
+            modifier = Modifier.padding(24.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
+        ) {
+            Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(Icons.Default.Warning, contentDescription = null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.error)
+                Spacer(Modifier.height(16.dp))
+                Text("HARDWARE FAULT", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onErrorContainer)
+                Spacer(Modifier.height(8.dp))
+                Text("Printer is out of paper, overheated, or cover is open.\nAll transactions are paused until resolved.", textAlign = TextAlign.Center)
+                Spacer(Modifier.height(24.dp))
+                
+                if (!isAcknowledged) {
+                    Button(
+                        onClick = onAcknowledge,
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                    ) {
+                        Text("ACKNOWLEDGE & SILENCE ALARM")
+                    }
+                } else {
+                    Text("Alarm silenced. Please physically fix the printer. The system will resume automatically.", color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+                }
+            }
+        }
+    }
+}
