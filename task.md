@@ -29,8 +29,8 @@ This document tracks the execution progress of the ValtPrinter "Gold Standard" p
 ## 4. Phase 3: Hardware Integration & Safe Rendering
 - `[x]` **Sunmi SDK Implementation**: Core integration with Sunmi External Printer Library.
 - `[x]` **Headless Compose Rendering Engine**: `BitmapRenderer` implemented to snapshot Compose UI off-screen.
-- `[ ]` **JSON Payload Model Parser**: Domain code to translate raw Link App JSON into `BillingData` or generic templates.
-- `[ ]` **OOM & Chunking Loop Protocol**: Logic to split long receipts into bite-sized Bitmaps incrementally.
+- `[x]` **JSON Payload Model Parser**: Domain code to translate raw Link App JSON into `BillingData` or generic templates.
+- `[x]` **OOM & Chunking Loop Protocol**: Logic to split long receipts into bite-sized Bitmaps incrementally.
 
 ## 5. Phase 4: Resilience & Auto-Healing
 - `[ ]` **Hardware Disaster Rules (Paper/Power)**: Halt `QueueDispatcher` on fail codes, preserve DB State.

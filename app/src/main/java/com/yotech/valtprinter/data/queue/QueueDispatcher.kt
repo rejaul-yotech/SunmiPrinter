@@ -26,7 +26,7 @@ class QueueDispatcher @Inject constructor(
     private val printerRepository: PrinterRepository
 ) {
     @Inject
-    lateinit var gson: com.google.gson.Gson
+    lateinit var payloadParser: com.yotech.valtprinter.domain.util.PayloadParser
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var dispatcherJob: Job? = null
@@ -60,18 +60,18 @@ class QueueDispatcher @Inject constructor(
                         continue
                     }
 
-                    // 2. Parse Payload & Render
-                    val billingData = try {
-                        gson.fromJson(nextJob.payloadJson, com.yotech.valtprinter.domain.model.orderdata.BillingData::class.java)
-                    } catch (e: Exception) {
-                        Log.e("QUEUE_SERVER", "Malformed JSON for Job ${nextJob.id}: ${e.message}")
-                        printDao.updateStatus(nextJob.id, PrintStatus.FAILED)
-                        continue
-                    }
+                    // 2. Parse Payload safely
+                    val printPayload = payloadParser.parse(nextJob.payloadJson)
 
                     // 3. Mark as Processing
                     printDao.updateStatus(nextJob.id, PrintStatus.PROCESSING)
-                    NotificationHelper.updateNotification(serviceContext, "Printing Order #${billingData.orderId}", 1)
+
+                    val logMessage = when (printPayload) {
+                        is com.yotech.valtprinter.domain.model.PrintPayload.Billing -> "Printing Order #${printPayload.data.orderId}"
+                        is com.yotech.valtprinter.domain.model.PrintPayload.RawText -> "Printing Raw Text Document"
+                        is com.yotech.valtprinter.domain.model.PrintPayload.Unknown -> "Printing Unknown Payload Format"
+                    }
+                    NotificationHelper.updateNotification(serviceContext, logMessage, 1)
 
                     // 4. THE CHUNKED RESILIENT LOOP
                     // Logic: We render and flush slices. Upon every hardware success, we update the DB.
@@ -92,7 +92,17 @@ class QueueDispatcher @Inject constructor(
                             chunkIndex = currentChunk,
                             chunkSizePx = CHUNK_SIZE_PX
                         ) {
-                            com.yotech.valtprinter.ui.receipt.PosPrintingScreen(data = billingData, isScrollEnabled = false)
+                            when (printPayload) {
+                                is com.yotech.valtprinter.domain.model.PrintPayload.Billing -> {
+                                    com.yotech.valtprinter.ui.receipt.PosPrintingScreen(data = printPayload.data, isScrollEnabled = false)
+                                }
+                                is com.yotech.valtprinter.domain.model.PrintPayload.RawText -> {
+                                    com.yotech.valtprinter.ui.receipt.RawTextScreen(text = printPayload.text)
+                                }
+                                is com.yotech.valtprinter.domain.model.PrintPayload.Unknown -> {
+                                    com.yotech.valtprinter.ui.receipt.RawTextScreen(text = printPayload.rawJson)
+                                }
+                            }
                         }
 
                         if (bitmapChunk == null) {
