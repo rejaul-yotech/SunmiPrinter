@@ -1,15 +1,34 @@
+# Android Studio / IntelliJ IDEA
+.idea/
 *.iml
-.gradle
+*.iws
+*.ipr
+/out
+/gen
+*.xml
+!/app/src/main/AndroidManifest.xml
+!/app/src/debug/AndroidManifest.xml
+!/app/src/release/AndroidManifest.xml
+!/app/src/androidTest/AndroidManifest.xml
+!/app/src/test/AndroidManifest.xml
+
+# Local configuration
 /local.properties
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
-.DS_Store
-/build
-/captures
+
+# Gradle
+.gradle/
+build/
+app/build/
+
+# External Native Build
 .externalNativeBuild
 .cxx
-local.properties
+captures/
+
+# Misc
+.DS_Store
+*.swp
+*~
+*.bak
+*.tmp
+*.log
