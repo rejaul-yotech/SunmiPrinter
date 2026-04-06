@@ -16,58 +16,95 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 object BitmapRenderer {
+    /**
+     * Renders a specific "Slice" of a receipt.
+     * This is the "Gold Standard" for resilience, allowing the app to checkpoint its progress.
+     */
+    suspend fun renderReceiptChunk(
+        parentView: View,
+        chunkIndex: Int,
+        chunkSizePx: Int,
+        content: @Composable () -> Unit
+    ): Bitmap? {
+        val (width, totalHeight, composeView) = prepareComposeView(parentView, content)
+
+        val startY = chunkIndex * chunkSizePx
+        if (startY >= totalHeight) return null // End of receipt
+
+        val currentChunkHeight = if (startY + chunkSizePx > totalHeight) {
+            totalHeight - startY
+        } else {
+            chunkSizePx
+        }
+
+        return withContext(Dispatchers.Default) {
+            val bitmap = Bitmap.createBitmap(width, currentChunkHeight, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bitmap)
+            canvas.drawColor(android.graphics.Color.WHITE)
+
+            // Shift the canvas up to capture the specific slice
+            canvas.translate(0f, -startY.toFloat())
+
+            withContext(Dispatchers.Main) {
+                composeView.draw(canvas)
+                (parentView.rootView as? ViewGroup)?.removeView(composeView)
+            }
+            bitmap
+        }
+    }
+
+    /**
+     * Helper to prepare and measure the off-screen ComposeView.
+     */
+    private suspend fun prepareComposeView(
+        parentView: View,
+        content: @Composable () -> Unit
+    ): Triple<Int, Int, ComposeView> = withContext(Dispatchers.Main) {
+        val view = ComposeView(parentView.context).apply {
+            alpha = 0f
+            translationX = 5000f
+            setViewTreeLifecycleOwner(parentView.findViewTreeLifecycleOwner())
+            setViewTreeViewModelStoreOwner(parentView.findViewTreeViewModelStoreOwner())
+            setViewTreeSavedStateRegistryOwner(parentView.findViewTreeSavedStateRegistryOwner())
+
+            setContent {
+                androidx.compose.runtime.CompositionLocalProvider(
+                    androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(1f)
+                ) {
+                    content()
+                }
+            }
+            layoutParams = ViewGroup.LayoutParams(576, ViewGroup.LayoutParams.WRAP_CONTENT)
+        }
+
+        (parentView.rootView as? ViewGroup)?.addView(view)
+        
+        val measureSpecWidth = View.MeasureSpec.makeMeasureSpec(576, View.MeasureSpec.EXACTLY)
+        val measureSpecHeight = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+        view.measure(measureSpecWidth, measureSpecHeight)
+        
+        val w = view.measuredWidth
+        val h = view.measuredHeight
+        view.layout(0, 0, w, h)
+
+        Triple(w, h, view)
+    }
+
     suspend fun renderComposableToBitmap(
         parentView: View,
         content: @Composable () -> Unit
     ): Bitmap {
-        // 1. Create and measure the view on the Main thread
-        val (width, height, composeView) = withContext(Dispatchers.Main) {
-            val view = ComposeView(parentView.context).apply {
-                // [Stealth Mode] - Hide the capture view from the user
-                alpha = 0f
-                translationX = 5000f // Move off-screen in case alpha isn't enough
+        val (width, height, composeView) = prepareComposeView(parentView, content)
 
-                setViewTreeLifecycleOwner(parentView.findViewTreeLifecycleOwner())
-                setViewTreeViewModelStoreOwner(parentView.findViewTreeViewModelStoreOwner())
-                setViewTreeSavedStateRegistryOwner(parentView.findViewTreeSavedStateRegistryOwner())
-
-                setContent {
-                    androidx.compose.runtime.CompositionLocalProvider(
-                        androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(1f)
-                    ) {
-                        content()
-                    }
-                }
-                layoutParams = ViewGroup.LayoutParams(576, ViewGroup.LayoutParams.WRAP_CONTENT)
-            }
-
-            val rootView = parentView.rootView as? ViewGroup
-            rootView?.addView(view)
-
-            val measureSpecWidth = View.MeasureSpec.makeMeasureSpec(576, View.MeasureSpec.EXACTLY)
-            val measureSpecHeight = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
-
-            view.measure(measureSpecWidth, measureSpecHeight)
-            val measuredWidth = view.measuredWidth
-            val measuredHeight = view.measuredHeight
-
-            view.layout(0, 0, measuredWidth, measuredHeight)
-
-            Triple(measuredWidth, measuredHeight, view)
-        }
-
-        // 2. Perform the actual drawing and bitmap creation
         return withContext(Dispatchers.Default) {
             val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
             val canvas = Canvas(bitmap)
             canvas.drawColor(android.graphics.Color.WHITE)
 
-            // Draw must still happen on Main for some View types, but we minimize the window
             withContext(Dispatchers.Main) {
                 composeView.draw(canvas)
                 (parentView.rootView as? ViewGroup)?.removeView(composeView)
             }
-
             bitmap
         }
     }

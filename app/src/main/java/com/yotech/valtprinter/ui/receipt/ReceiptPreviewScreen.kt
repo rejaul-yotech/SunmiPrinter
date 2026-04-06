@@ -56,7 +56,9 @@ fun ReceiptPreviewScreen(
     val scope = rememberCoroutineScope()
 
     // Bind directly to the Gold Standard state flow
-    val printStatus by viewModel.printStatus.collectAsStateWithLifecycle()
+    val printStatus by viewModel.printStatus.collectAsStateWithLifecycle(
+        initialValue = PrintStatus.Idle
+    )
 
     // Reset status when entering the screen to ensure fresh state
     LaunchedEffect(Unit) {

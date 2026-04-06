@@ -15,5 +15,12 @@ interface PrinterRepository {
     suspend fun connect(device: PrinterDevice)
     suspend fun autoConnectUsb(): Boolean
     suspend fun printReceipt(bitmap: Bitmap): PrintResult
+    suspend fun printChunk(bitmap: Bitmap, isLastChunk: Boolean): PrintResult
+    suspend fun finalCut(): PrintResult
+    
+    fun getActiveCloudPrinter(): com.sunmi.externalprinterlibrary2.printer.CloudPrinter?
+    fun getCaptureView(): android.view.View?
+    fun setCaptureView(view: android.view.View)
+    
     fun disconnect()
 }

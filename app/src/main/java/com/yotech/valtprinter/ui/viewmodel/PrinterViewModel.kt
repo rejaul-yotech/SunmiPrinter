@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.yotech.valtprinter.domain.model.PrintResult
+import com.yotech.valtprinter.domain.model.PrintStatus
 import com.yotech.valtprinter.domain.model.PrinterDevice
 import com.yotech.valtprinter.domain.model.PrinterState
 import com.yotech.valtprinter.domain.repository.PrinterRepository
@@ -14,13 +15,11 @@ import com.yotech.valtprinter.domain.usecase.PrintReceiptUseCase
 import com.yotech.valtprinter.domain.usecase.StartScanUseCase
 import com.yotech.valtprinter.domain.usecase.StopScanUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
-import com.yotech.valtprinter.domain.model.PrintStatus
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -38,10 +37,14 @@ class PrinterViewModel @Inject constructor(
     val printerState: StateFlow<PrinterState> = repository.printerState
     val discoveredDevices: StateFlow<List<PrinterDevice>> = repository.discoveredDevices
 
-    private val _printStatus = MutableStateFlow<PrintStatus>(PrintStatus.Idle)
-    val printStatus: StateFlow<PrintStatus> = _printStatus.asStateFlow()
+    private val _printStatus = MutableSharedFlow<PrintStatus>(
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+    val printStatus: SharedFlow<PrintStatus> = _printStatus.asSharedFlow()
 
     init {
+        _printStatus.tryEmit(PrintStatus.Idle)
         // Attempt to auto Connect USB immediately upon boot up
         onUsbAttached()
     }
@@ -73,21 +76,22 @@ class PrinterViewModel @Inject constructor(
     fun printReceipt(bitmap: Bitmap) {
         viewModelScope.launch {
             try {
-                _printStatus.value = PrintStatus.Sending
+                _printStatus.tryEmit(PrintStatus.Sending)
                 val result = printReceiptUseCase(bitmap)
-                _printStatus.value = if (result is PrintResult.Success) {
+                val newStatus = if (result is PrintResult.Success) {
                     PrintStatus.Success
                 } else {
                     PrintStatus.Failure((result as PrintResult.Failure).reason)
                 }
+                _printStatus.tryEmit(newStatus)
             } catch (e: Exception) {
-                _printStatus.value = PrintStatus.Failure("Unexpected Error: ${e.message}")
+                _printStatus.tryEmit(PrintStatus.Failure("Unexpected Error: ${e.message}"))
             }
         }
     }
 
     fun resetPrintStatus() {
-        _printStatus.value = PrintStatus.Idle
+        _printStatus.tryEmit(PrintStatus.Idle)
     }
 
     fun disconnect() {

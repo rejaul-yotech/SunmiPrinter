@@ -39,8 +39,11 @@ enum class AppScreen { PRINTER, PREVIEW }
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
+    @javax.inject.Inject
+    lateinit var repository: com.yotech.valtprinter.domain.repository.PrinterRepository
+
     private val viewModel: PrinterViewModel by viewModels()
-    private var permissionsGranted by mutableStateOf(false)
+    private var permissionsGranted by androidx.compose.runtime.mutableStateOf(false)
     private var currentScreen by mutableStateOf(AppScreen.PRINTER)
 
     private val permissionLauncher = registerForActivityResult(
@@ -55,6 +58,13 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         permissionsGranted = checkAllPermissions()
+        
+        // Elite Resilience: Set parent view for headless rendering
+        repository.setCaptureView(window.decorView)
+
+        if (permissionsGranted) {
+            startPrinterService()
+        }
 
         enableEdgeToEdge()
         setContent {
@@ -116,6 +126,15 @@ class MainActivity : ComponentActivity() {
             perms.add(Manifest.permission.BLUETOOTH_ADMIN)
         }
         return perms.toTypedArray()
+    }
+
+    private fun startPrinterService() {
+        val intent = Intent(this, com.yotech.valtprinter.data.service.PrinterForegroundService::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(intent)
+        } else {
+            startService(intent)
+        }
     }
 
     @Composable

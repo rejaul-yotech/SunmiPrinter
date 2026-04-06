@@ -15,38 +15,46 @@ import javax.inject.Singleton
 @Singleton
 class SdkPrintSource @Inject constructor() {
 
-    suspend fun printBitmap(printer: CloudPrinter, bitmap: Bitmap): PrintResult {
+    /**
+     * Prints a bitmap chunk. 
+     * If [isLastChunk] is false, the paper is NOT cut, allowing for continuous long receipts.
+     */
+    suspend fun printBitmapChunk(
+        printer: CloudPrinter, 
+        bitmap: Bitmap, 
+        isLastChunk: Boolean
+    ): PrintResult {
         val completable = CompletableDeferred<PrintResult>()
         try {
             printer.clearTransBuffer()
             printer.initStyle()
             printer.setAlignment(AlignStyle.CENTER)
 
-            // Print the bitmap
             printer.printImage(bitmap, com.sunmi.externalprinterlibrary2.style.ImageAlgorithm.BINARIZATION)
             
-            // Feed and cut (SDK handles feed to cutter automatically)
-            printer.cutPaper(true)
+            if (isLastChunk) {
+                printer.cutPaper(true)
+            }
 
-            delay(100) // Ensure thermal head is ready
+            delay(100)
             printer.commitTransBuffer(object : ResultCallback {
                 override fun onComplete() {
-                    Log.d("SDK_PRINT", "Print buffer committed successfully")
                     completable.complete(PrintResult.Success)
                 }
 
                 override fun onFailed(err: CloudPrinterStatus?) {
-                    val errorMsg = "SDK Error: ${err?.name ?: "Unknown"}"
-                    Log.e("SDK_PRINT", errorMsg)
+                    val errorMsg = "Chunk Error: ${err?.name ?: "Unknown"}"
                     completable.complete(PrintResult.Failure(errorMsg))
                 }
             })
         } catch (e: Exception) {
-            val errorMsg = "SDK Print Exception: ${e.message}"
-            Log.e("SDK_PRINT", errorMsg, e)
-            completable.complete(PrintResult.Failure(errorMsg))
+            completable.complete(PrintResult.Failure("Chunk Exception: ${e.message}"))
         }
 
         return completable.await()
+    }
+
+    suspend fun printBitmap(printer: CloudPrinter, bitmap: Bitmap): PrintResult {
+        return printBitmapChunk(printer, bitmap, isLastChunk = true)
     }
 }

@@ -9,7 +9,11 @@ This document tracks the execution progress of the ValtPrinter "Gold Standard" p
 - `[x]` **MVVM Pattern**: ViewModels decoupling State from UI.
 - `[x]` **Kotlin Coroutines & Flow**: Used for non-blocking asynchronous processing and state observation.
 - `[x]` **Dependency Injection (Hilt/Dagger)**: Full dependency graph management.
-- `[/]` **Persistence Layer (Room/DataStore)**: Persistent queue and settings management.
+- `[x]` **Persistence Layer (Room/DataStore)**: Persistent queue and settings management.
+    - `[x]` Add Room & DataStore dependencies to `libs.versions.toml` and `build.gradle.kts`.
+    - `[x]` Define `PrintJobEntity` for the Zero-Loss state machine.
+    - `[x]` Implement `PrintDao` with priority-aware queries.
+    - `[x]` Configure `PrinterDataStore` for paper height heuristics.
 
 ## 2. Phase 1: IPC & Data Governance (The Foundation)
 - `[ ]` **AIDL Interface Configuration (`IPrinterService`)**: Build the multi-threaded bridge for Link App requests.
@@ -37,3 +41,8 @@ This document tracks the execution progress of the ValtPrinter "Gold Standard" p
 - `[/]` **Control Center UI**: Dashboard exists, but needs integration with the live Room queue.
 - `[ ]` **Alarm Override System**: Audio/Visual high-priority alerts for hardware emergencies.
 - `[ ]` **WorkManager Automation**: TTL Garbage Collection and Storage Sentinel tasks.
+
+## 7. Elite Architectural Refactoring
+- `[x]` **StateFlow/SharedFlow Migration**: Upgraded ViewModel events to `SharedFlow` with `onBufferOverflow = DROP_OLDEST`.
+- `[x]` **Mandatory Hilt Injection**: Verified `UseCase` and `Repository` level Dagger-Hilt injection compliance.
+- `[x]` **Coding Rules Modernization**: Added zero-downtime rules and lifecycle-aware protocol to `CODING_RULES.md`.

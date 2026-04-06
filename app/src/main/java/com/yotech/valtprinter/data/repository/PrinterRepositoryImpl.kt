@@ -180,7 +180,17 @@ class PrinterRepositoryImpl @Inject constructor(
         return foundUsb
     }
 
-    override suspend fun printReceipt(bitmap: Bitmap): PrintResult {
+    private var captureView: android.view.View? = null
+
+    override fun getActiveCloudPrinter(): CloudPrinter? = activeCloudPrinter
+
+    override fun getCaptureView(): android.view.View? = captureView
+
+    override fun setCaptureView(view: android.view.View) {
+        this.captureView = view
+    }
+
+    override suspend fun printChunk(bitmap: Bitmap, isLastChunk: Boolean): PrintResult {
         val printer = activeCloudPrinter
         val device = connectedDevice
 
@@ -192,9 +202,24 @@ class PrinterRepositoryImpl @Inject constructor(
             if (device.connectionType == ConnectionType.LAN && device.address.isNotEmpty()) {
                 rawSocketPrintSource.printBitmap(device.address, device.port, bitmap)
             } else {
-                sdkPrintSource.printBitmap(printer, bitmap)
+                sdkPrintSource.printBitmapChunk(printer, bitmap, isLastChunk)
             }
         }
+    }
+
+    override suspend fun finalCut(): PrintResult {
+        val printer = activeCloudPrinter ?: return PrintResult.Failure("Printer null")
+        return try {
+            printer.cutPaper(true)
+            printer.commitTransBuffer(null)
+            PrintResult.Success
+        } catch (e: Exception) {
+            PrintResult.Failure("Cut Failed: ${e.message}")
+        }
+    }
+
+    override suspend fun printReceipt(bitmap: Bitmap): PrintResult {
+        return printChunk(bitmap, isLastChunk = true)
     }
 
     private fun stopAllSearches() {

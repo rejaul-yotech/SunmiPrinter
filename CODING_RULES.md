@@ -10,7 +10,9 @@ The application MUST strictly adhere to **Clean Architecture** patterns to ensur
 
 ### 1.2 Data Flow Rule
 *   Data MUST flow unidirectionally: UI -> ViewModel -> UseCase -> Repository.
-*   Use **StateFlow** for UI state and **SharedFlow** for single-shot events (Toasts, Navigation).
+*   **StateFlow Mandatory**: All UI state must be exposed as `StateFlow`. Use `asStateFlow()` to prevent external mutation.
+*   **SharedFlow for Events**: One-time events (Toasts, Navigation) MUST use `SharedFlow` with `ExtraBufferCapacity = 1` and `onBufferOverflow = DROP_OLDEST` to prevent event re-triggering on rotation.
+*   **Lifecycle-Aware Collection**: UI must ONLY collect flows using `repeatOnLifecycle` or `flowWithLifecycle` for background safety.
 
 ---
 
@@ -19,7 +21,9 @@ Every class and function must strive for excellence through these rules:
 
 *   **S (Single Responsibility)**: A UseCase must do exactly ONE thing (e.g., `GetActivePrintJob`). A Repository handles exactly ONE data source type.
 *   **O (Open/Closed)**: Use interfaces for all dependencies. New functionality (e.g., adding a new printer brand) should be done via new implementation classes, not by modifying existing ones.
-*   **D (Dependency Inversion)**: Always inject dependencies via Constructor. Use **Hilt** to manage the dependency graph.
+*   **D (Dependency Inversion)**: Always inject dependencies via `@Inject constructor`. 
+*   **Mandatory Hilt**: ALL singletons, repositories, and data sources MUST be managed by Hilt. Manual instantiation (`new class()`) is strictly prohibited for cross-layer dependencies.
+*   **Module Definition**: Interfaces must be bound in Hilt Modules using `@Binds`. Third-party or complex objects must be provided using `@Provides`.
 
 ---
 
