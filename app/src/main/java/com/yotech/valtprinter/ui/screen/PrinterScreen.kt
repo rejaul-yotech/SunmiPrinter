@@ -1,6 +1,14 @@
 package com.yotech.valtprinter.ui.screen
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -13,6 +21,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -67,6 +76,9 @@ import com.yotech.valtprinter.ui.theme.VioletElectric
 import com.yotech.valtprinter.ui.viewmodel.PrinterViewModel
 import com.yotech.valtprinter.ui.component.StatusPill
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
 
 @Composable
 fun PrinterScreen(
@@ -142,26 +154,17 @@ fun PrinterScreen(
                     deviceName = currentState.deviceName
                 )
 
-                is PrinterState.Reconnecting -> ReconnectingStateView(
-                    deviceName = currentState.deviceName,
-                    secondsRemaining = currentState.secondsRemaining,
-                    microState = currentState.microState,
-                    recentJobs = recentJobs
-                )
-
-                is PrinterState.Connected -> ConnectedStateView(
-                    device = currentState.device,
-                    recentJobs = recentJobs,
-                    onPreviewClick = onNavigateToPreview,
-                    onDisconnect = viewModel::disconnect
-                )
-
-                is PrinterState.Error -> ErrorStateView(
-                    message = currentState.message,
-                    diagnosticMessage = currentState.diagnosticMessage,
-                    onRetry = viewModel::reconnect,
-                    onScanOthers = viewModel::startDiscovery
-                )
+                else -> {
+                    // Contextual Hardware Dashboard (Morphs between Connected, Reconnecting, and Error)
+                    HardwareDashboard(
+                        state = currentState,
+                        recentJobs = recentJobs,
+                        onPreviewClick = onNavigateToPreview,
+                        onDisconnect = viewModel::disconnect,
+                        onRetry = viewModel::reconnect,
+                        onScanOthers = viewModel::startDiscovery
+                    )
+                }
             }
         } // End AnimatedContent
         } // End Column
@@ -243,69 +246,65 @@ fun ConnectingStateView(deviceName: String) {
     }
 
 @Composable
-fun ReconnectingStateView(deviceName: String, secondsRemaining: Int, microState: String, recentJobs: List<PrintJobEntity>) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-        modifier = Modifier.padding(32.dp)
-    ) {
-        CircularProgressIndicator(color = Color.Red, strokeWidth = 2.dp)
-        Spacer(Modifier.height(24.dp))
-        Text(
-            "Printer Offline",
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold,
-            color = Color.Red
-        )
-        Text(
-            "Attempting to reconnect to $deviceName...",
-            style = MaterialTheme.typography.bodyMedium,
-            textAlign = TextAlign.Center
-        )
-        Spacer(Modifier.height(8.dp))
-        Text(
-            microState,
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.Bold,
-            color = CyanElectric,
-            textAlign = TextAlign.Center
-        )
-        Spacer(Modifier.height(16.dp))
-        Text(
-            "Time remaining: ${secondsRemaining}s",
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.secondary
-        )
-        Spacer(Modifier.height(32.dp))
-        
-        Card(
-            colors = CardDefaults.cardColors(containerColor = CyanElectric.copy(alpha = 0.1f)),
-            border = BorderStroke(1.dp, CyanElectric.copy(alpha = 0.3f))
-        ) {
-            Text(
-                "Safe State: ${recentJobs.size} order(s) secured in queue. You may continue taking new orders smoothly.",
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = CyanElectric,
-                modifier = Modifier.padding(16.dp),
-                textAlign = TextAlign.Center
-            )
-        }
-    }
-}
-
-@Composable
-fun ConnectedStateView(
-    device: PrinterDevice,
+fun HardwareDashboard(
+    state: PrinterState,
     recentJobs: List<PrintJobEntity>,
     onPreviewClick: () -> Unit,
-    onDisconnect: () -> Unit
+    onDisconnect: () -> Unit,
+    onRetry: () -> Unit,
+    onScanOthers: () -> Unit
 ) {
+    // Breathing Aura Animation
+    val infiniteTransition = rememberInfiniteTransition(label = "AuraTransition")
+    val auraAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.2f,
+        targetValue = 0.8f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1200, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "AuraAlpha"
+    )
+
+    val borderColor by animateColorAsState(
+        targetValue = when (state) {
+            is PrinterState.Error -> Color.Red
+            is PrinterState.Reconnecting -> Color(0xFFFFA500)
+            else -> Color.Transparent
+        },
+        label = "BorderColor"
+    )
+
+    // Icon Shaking Animation
+    val shakeOffset by infiniteTransition.animateFloat(
+        initialValue = -2f,
+        targetValue = 2f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(100, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "ShakeOffset"
+    )
+
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxSize()) {
         Card(
             colors = CardDefaults.cardColors(containerColor = NavySurface),
-            shape = RoundedCornerShape(16.dp),
-            modifier = Modifier.fillMaxWidth()
+            shape = RoundedCornerShape(24.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                // Elite Neon Glow Aura
+                .drawBehind {
+                    if (state !is PrinterState.Connected) {
+                        drawRoundRect(
+                            color = borderColor.copy(alpha = auraAlpha * 0.3f),
+                            cornerRadius = CornerRadius(24.dp.toPx(), 24.dp.toPx()),
+                            size = size.copy(width = size.width + 12.dp.toPx(), height = size.height + 12.dp.toPx()),
+                            topLeft = Offset(-6.dp.toPx(), -6.dp.toPx())
+                        )
+                    }
+                },
+            border = if (state !is PrinterState.Connected) 
+                BorderStroke(2.dp, borderColor.copy(alpha = auraAlpha)) else null
         ) {
             Column(
                 Modifier
@@ -313,177 +312,172 @@ fun ConnectedStateView(
                     .fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-
-                val connectionIcon = when (device.connectionType) {
-                    ConnectionType.USB -> Icons.Default.Usb
-                    ConnectionType.BLUETOOTH -> Icons.Default.Bluetooth
-                    ConnectionType.LAN -> Icons.Default.Wifi
-                }
-
-                Box(
-                    modifier = Modifier
-                        .size(80.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = connectionIcon,
-                        contentDescription = null,
-                        modifier = Modifier.size(40.dp),
-                        tint = CyanElectric
+                // Persistent Icon Area with Morphing Elements
+                Box(contentAlignment = Alignment.Center) {
+                    val iconColor by animateColorAsState(
+                        if (state is PrinterState.Error || state is PrinterState.Reconnecting) Color.Red else CyanElectric,
+                        label = "IconTint"
                     )
+
+                    if (state is PrinterState.Reconnecting) {
+                        CircularProgressIndicator(
+                            progress = { state.secondsRemaining / 60f },
+                            modifier = Modifier.size(95.dp),
+                            color = Color.Red.copy(alpha = 0.4f),
+                            strokeWidth = 3.dp
+                        )
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .size(70.dp)
+                            .offset(x = if (state !is PrinterState.Connected) shakeOffset.dp else 0.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = when (state) {
+                                is PrinterState.Error -> Icons.Default.LinkOff
+                                else -> Icons.Default.Print
+                            },
+                            contentDescription = null,
+                            modifier = Modifier.size(32.dp),
+                            tint = iconColor
+                        )
+                    }
                 }
 
                 Spacer(Modifier.height(24.dp))
 
-                StatusPill(state = PrinterState.Connected(device))
+                StatusPill(state = state)
 
-                Spacer(Modifier.height(24.dp))
+                Spacer(Modifier.height(16.dp))
 
+                val name = when (state) {
+                    is PrinterState.Connected -> state.device.name
+                    is PrinterState.Reconnecting -> state.deviceName
+                    else -> "Connection Lost"
+                }
+                
                 Text(
-                    text = device.name,
+                    text = name,
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center
                 )
 
-                if (device.address.isNotEmpty()) {
-                    Text(
-                        text = device.address,
-                        style = MaterialTheme.typography.bodySmall,
-                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                        color = MaterialTheme.colorScheme.secondary
-                    )
+                AnimatedContent(targetState = state, label = "MicroInfo") { s ->
+                    when (s) {
+                        is PrinterState.Reconnecting -> {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(s.microState, color = CyanElectric, fontWeight = FontWeight.Bold)
+                                Text("Recovery active...", style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                        is PrinterState.Error -> {
+                            Text("Hardware Fault Detected", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                        }
+                        is PrinterState.Connected -> {
+                            Text(s.device.address, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
+                        }
+                        else -> {}
+                    }
                 }
             }
         }
 
         Spacer(Modifier.height(16.dp))
 
-        // Display recent jobs dynamically from Room
-        if (recentJobs.isNotEmpty()) {
-            Text("Recent Activity (${recentJobs.size})", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 8.dp))
-            LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                items(recentJobs, key = { it.id }) { job ->
-                    ListItem(
-                        headlineContent = { Text("Job: ${job.externalJobId ?: "Manual"} - Chunk ${job.currentChunkIndex}") },
-                        supportingContent = { Text("Status: ${job.status.name}") },
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-                    )
-                    HorizontalDivider()
-                }
-            }
-        } else {
-            Spacer(Modifier.weight(1f))
-        }
-
-        Spacer(Modifier.height(16.dp))
-
-
-        Button(
-            onClick = onPreviewClick,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(64.dp),
-            shape = RoundedCornerShape(12.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = CyanElectric)
-        ) {
-            Icon(Icons.Default.Print, contentDescription = null, tint = NavySurface)
-            Spacer(Modifier.width(8.dp))
-            Text(
-                "PREVIEW TICKET",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = NavySurface
-            )
-        }
-
-        Spacer(Modifier.height(16.dp))
-
-        OutlinedButton(
-            onClick = onDisconnect,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(56.dp),
-            shape = RoundedCornerShape(12.dp),
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-            border = BorderStroke(
-                1.5.dp,
-                MaterialTheme.colorScheme.error.copy(alpha = 0.6f)
-            )
-        ) {
-            Icon(imageVector = Icons.Default.LinkOff, contentDescription = null)
-            Spacer(Modifier.width(12.dp))
-            Text(
-                "DISCONNECT PRINTER",
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.SemiBold
-            )
-        }
-    }
-}
-
-@Composable
-fun ErrorStateView(message: String, diagnosticMessage: String, onRetry: () -> Unit, onScanOthers: () -> Unit) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(24.dp)) {
-        StatusPill(state = PrinterState.Error(message, diagnosticMessage))
-        
-        Spacer(Modifier.height(32.dp))
-
-        Icon(
-            imageVector = Icons.Default.LinkOff,
-            contentDescription = null,
-            modifier = Modifier.size(80.dp),
-            tint = MaterialTheme.colorScheme.error.copy(alpha = 0.6f)
-        )
-        Spacer(Modifier.height(24.dp))
-        Text(
-            "Connection Lost",
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.error
-        )
-        Spacer(Modifier.height(8.dp))
-        Text(
-            message,
-            style = MaterialTheme.typography.bodyMedium,
-            textAlign = TextAlign.Center,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        
-        if (diagnosticMessage.isNotEmpty()) {
-            Spacer(Modifier.height(24.dp))
+        // Queue Assurance Message (Reassurance during downtime)
+        if (state is PrinterState.Reconnecting || state is PrinterState.Error) {
             Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)),
+                colors = CardDefaults.cardColors(containerColor = CyanElectric.copy(alpha = 0.05f)),
+                modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
-                    text = "Troubleshoot: $diagnosticMessage",
-                    style = MaterialTheme.typography.bodyMedium,
+                    "Safe State: ${recentJobs.size} order(s) secured. Continue taking orders normally.",
+                    style = MaterialTheme.typography.bodySmall,
                     fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(16.dp),
+                    color = CyanElectric,
+                    modifier = Modifier.padding(12.dp),
                     textAlign = TextAlign.Center
                 )
             }
+            Spacer(Modifier.height(16.dp))
         }
-        Spacer(Modifier.height(32.dp))
-        
-        Button(
-            onClick = onRetry,
-            modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(containerColor = CyanElectric)
-        ) {
-            Text("TRY RECONNECTING", color = NavySurface)
+
+        // Action Area
+        Column(modifier = Modifier.weight(1f)) {
+            if (recentJobs.isNotEmpty() && state is PrinterState.Connected) {
+                Text("Recent Activity", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(bottom = 8.dp))
+                LazyColumn(modifier = Modifier.fillMaxWidth()) {
+                    items(recentJobs, key = { it.id }) { job ->
+                        ListItem(
+                            headlineContent = { Text("Job ${job.externalJobId ?: "Manual"}") },
+                            supportingContent = { Text("Status: ${job.status}") },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        )
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
+                    }
+                }
+            } else if (state is PrinterState.Error) {
+                // Diagnostic Card
+                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.1f))) {
+                    Text(
+                        (state as PrinterState.Error).diagnosticMessage,
+                        Modifier.padding(16.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
         }
-        
-        Spacer(Modifier.height(12.dp))
-        
-        OutlinedButton(
-            onClick = onScanOthers,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("SCAN FOR OTHER PRINTERS")
+
+        // Sticky Adaptive Buttons
+        Column(modifier = Modifier.fillMaxWidth()) {
+            if (state is PrinterState.Connected) {
+                Button(
+                    onClick = onPreviewClick,
+                    modifier = Modifier.fillMaxWidth().height(60.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = CyanElectric)
+                ) {
+                    Text("PREVIEW TICKET", color = NavySurface, fontWeight = FontWeight.Bold)
+                }
+                Spacer(Modifier.height(12.dp))
+                OutlinedButton(
+                    onClick = onDisconnect,
+                    modifier = Modifier.fillMaxWidth().height(50.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error)
+                ) {
+                    Text("DISCONNECT PRINTER", color = MaterialTheme.colorScheme.error)
+                }
+            } else if (state is PrinterState.Reconnecting) {
+                Button(
+                    onClick = onRetry, // In Reconnecting state, this could trigger a force retry or we can map it to STOP
+                    modifier = Modifier.fillMaxWidth().height(60.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(alpha = 0.8f))
+                ) {
+                    Text("STOP RECOVERY", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+                Spacer(Modifier.height(12.dp))
+                TextButton(onClick = onScanOthers, modifier = Modifier.fillMaxWidth()) {
+                    Text("CHANGE PRINTER")
+                }
+            } else {
+                Button(
+                    onClick = onRetry,
+                    modifier = Modifier.fillMaxWidth().height(60.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = CyanElectric)
+                ) {
+                    Text("TRY RECONNECTING", color = NavySurface, fontWeight = FontWeight.Bold)
+                }
+                Spacer(Modifier.height(12.dp))
+                TextButton(onClick = onScanOthers, modifier = Modifier.fillMaxWidth()) {
+                    Text("SCAN FOR OTHERS")
+                }
+            }
         }
     }
 }

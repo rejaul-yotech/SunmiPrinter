@@ -5,6 +5,7 @@ import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -12,6 +13,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -23,13 +25,22 @@ fun StatusPill(
     state: PrinterState,
     modifier: Modifier = Modifier
 ) {
-    val (color, text) = when (state) {
-        is PrinterState.Connected -> Color.Green to "Connected"
-        is PrinterState.Reconnecting -> Color(0xFFFFA500) to "Reconnecting..."
-        is PrinterState.Connecting -> Color.Cyan to "Connecting..."
-        is PrinterState.Scanning -> Color.Cyan to "Scanning..."
-        is PrinterState.Error -> Color.Red to "Offline"
-        else -> Color.Gray to "Idle"
+    val text = when (state) {
+        is PrinterState.Connected -> "Connected"
+        is PrinterState.Reconnecting -> "Recovering: ${state.secondsRemaining}s"
+        is PrinterState.Connecting -> "Connecting..."
+        is PrinterState.Scanning -> "Scanning..."
+        is PrinterState.Error -> "Offline"
+        else -> "Idle"
+    }
+
+    val color = when (state) {
+        is PrinterState.Connected -> Color.Green
+        is PrinterState.Reconnecting -> Color(0xFFFFA500)
+        is PrinterState.Connecting -> Color.Cyan
+        is PrinterState.Scanning -> Color.Cyan
+        is PrinterState.Error -> Color.Red
+        else -> Color.Gray
     }
 
     val animatedColor by animateColorAsState(
@@ -50,29 +61,57 @@ fun StatusPill(
         label = "AlphaPulse"
     )
 
-    Row(
-        modifier = modifier
-            .clip(RoundedCornerShape(100.dp))
-            .background(animatedColor.copy(alpha = 0.15f))
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Box(
+        Row(
             modifier = Modifier
-                .size(8.dp)
                 .clip(RoundedCornerShape(100.dp))
-                .background(animatedColor.copy(alpha = alpha))
-        )
-        Spacer(Modifier.width(8.dp))
-        Text(
-            text = text.uppercase(),
-            style = MaterialTheme.typography.labelLarge.copy(
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.2.sp,
-                fontSize = 11.sp
-            ),
-            color = animatedColor
-        )
+                .background(animatedColor.copy(alpha = 0.15f))
+                // Elite Neon Glow Effect
+                .drawBehind {
+                    if (state !is PrinterState.Idle) {
+                        drawCircle(
+                            color = animatedColor.copy(alpha = alpha * 0.2f),
+                            radius = size.maxDimension * 0.8f
+                        )
+                    }
+                }
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .clip(RoundedCornerShape(100.dp))
+                    .background(animatedColor.copy(alpha = alpha))
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = text.uppercase(),
+                style = MaterialTheme.typography.labelLarge.copy(
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.2.sp,
+                    fontSize = 11.sp
+                ),
+                color = animatedColor
+            )
+        }
+        
+        // Internal Micro-Progress for Reconnecting state
+        if (state is PrinterState.Reconnecting) {
+            Spacer(Modifier.height(6.dp))
+            LinearProgressIndicator(
+                progress = { state.secondsRemaining / 60f },
+                modifier = Modifier
+                    .width(80.dp)
+                    .height(2.dp)
+                    .clip(RoundedCornerShape(100.dp)),
+                color = animatedColor,
+                trackColor = animatedColor.copy(alpha = 0.05f)
+            )
+        }
     }
 }
