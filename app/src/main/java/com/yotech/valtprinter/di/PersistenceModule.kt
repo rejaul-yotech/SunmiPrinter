@@ -19,10 +19,10 @@ object PersistenceModule {
     @Singleton
     fun providePrinterDatabase(@ApplicationContext context: Context): PrinterDatabase {
         return Room.databaseBuilder(
-            context,
-            PrinterDatabase::class.java,
-            "valt_printer_db"
-        ).fallbackToDestructiveMigration().build()
+                context,
+                PrinterDatabase::class.java,
+                "valt_printer_db"
+            ).fallbackToDestructiveMigration(false).build()
     }
 
     @Provides

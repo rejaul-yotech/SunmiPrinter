@@ -170,29 +170,45 @@ class PrinterRepositoryImpl @Inject constructor(
         })
     }
 
+    /**
+     * ELITE RESILIENCE: Perpetual Auto-Reconnection Hub
+     * Instead of timing out, this logic enters an infinite "Resilience Loop"
+     * that scales from aggressive polling (2s) to battery-efficient polling (15s).
+     */
     private fun triggerAutoReconnection(device: PrinterDevice) {
         reconnectionJob?.cancel()
         reconnectionJob = repositoryScope.launch {
             lastConnectedDevice = device
-            var secondsPassed = 0
-            val maxSeconds = 60
+            var attempts = 0
+            val aggressiveLimit = 30 // First 60 seconds (30 attempts * 2s)
 
-            while (secondsPassed < maxSeconds) {
-                val remaining = maxSeconds - secondsPassed
-
-                if (secondsPassed == 6) {
-                    feedbackManager.emitCriticalWarning()
+            while (isActive) {
+                attempts++
+                // Aggressive Search: First 10 seconds (1s intervals), then backoff to 2s, then 10s
+                val delayMs = when {
+                    attempts <= 10 -> 1000L
+                    attempts <= 35 -> 2000L
+                    else -> 10000L
                 }
 
+                // Visual micro-state for the Hub
                 val microState = when {
-                    secondsPassed < 2 -> "Scanning signal..."
-                    secondsPassed in 2..5 -> "Attempting handshake..."
-                    else -> "Verifying hardware identity..."
+                    attempts <= 5 -> "Synchronizing signal..."
+                    attempts <= 15 -> "Verifying hardware presence..."
+                    attempts <= aggressiveLimit -> "Probing connection ports..."
+                    else -> "Battery-efficient polling active..."
                 }
 
-                _printerState.value = PrinterState.Reconnecting(device.name, remaining, microState)
+                _printerState.value = PrinterState.Reconnecting(device.name, (delayMs/1000).toInt(), microState)
 
-                Log.d("RECONNECT", "Attempting recovery... $remaining s remaining")
+                Log.d("RESILIENCE_HUB", "Attempt #$attempts | Next check in ${delayMs / 1000}s")
+
+                // Tactical reminders: vibration only, no intrusive tones during background search
+                if (attempts == 1 || (attempts > aggressiveLimit && attempts % 15 == 0)) {
+                    withContext(Dispatchers.Main) {
+                        feedbackManager.emitCriticalWarning() // Aggressive Double-Tap
+                    }
+                }
 
                 // Silent search for the specific device
                 var found = false
@@ -216,29 +232,27 @@ class PrinterRepositoryImpl @Inject constructor(
                                 if (uniqueId == device.id) {
                                     found = true
                                     repositoryScope.launch {
-                                        connect(device)
-                                        feedbackManager.emitSuccess()
+                                        // Robust Handshake: Force a small delay to allow SDK binding to stabilize
+                                        delay(1000)
+                                        Log.i("RESILIENCE_HUB", "Hardware found! Initializing handshake...")
+                                        connect(device) 
+                                        // connect() will update the state to Connected if successful
                                     }
                                 }
                             }
                         }
                 } catch (e: Exception) {
-                    Log.e("RECONNECT", "Search failed: ${e.message}")
+                    Log.e("RESILIENCE_HUB", "Search failed: ${e.message}")
                 }
 
-                if (found) break
-
-                delay(2000) // Retry every 2 seconds
-                secondsPassed += 2
-            }
-
-            if (activeCloudPrinter == null) {
-                val diagnostic = when (device.connectionType) {
-                    ConnectionType.USB -> "Ensure the USB cable is firmly plugged into both the device and the printer base."
-                    ConnectionType.LAN -> "Check if the printer's network light is green. Ensure both devices are on the same WiFi."
-                    ConnectionType.BLUETOOTH -> "Ensure the printer is powered on and within 10 meters."
+                if (found) {
+                    // We wait for the connect() call above to finalize the state
+                    // If connect() fails, the state will go to Error, and triggerAutoReconnection 
+                    // will be called again from onDisConnect(), keeping the loop alive.
+                    break
                 }
-                _printerState.value = PrinterState.Error("Connection Lost", diagnostic)
+
+                delay(delayMs)
             }
         }
     }

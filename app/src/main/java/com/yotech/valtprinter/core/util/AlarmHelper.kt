@@ -11,7 +11,6 @@ import android.os.VibratorManager
 
 object AlarmHelper {
 
-    private var defaultRingtone: Ringtone? = null
     private var isPlaying = false
 
     fun startAlarmAndVibration(context: Context) {
@@ -19,19 +18,7 @@ object AlarmHelper {
         isPlaying = true
 
         try {
-            // Audio Alarm
-            val alert = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
-                ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
-                ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
-
-            defaultRingtone = RingtoneManager.getRingtone(context, alert)?.apply {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                    isLooping = true
-                }
-                play()
-            }
-
-            // Vibration
+            // Purely Haptic Alert: No annoying audio tones
             val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 val vibratorManager =
                     context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
@@ -42,7 +29,7 @@ object AlarmHelper {
             }
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                // Alternating pattern: wait 500ms, vibrate 500ms, repeat
+                // Alternating pulse: wait 500ms, vibrate 500ms, repeat indefinitely
                 vibrator.vibrate(
                     VibrationEffect.createWaveform(longArrayOf(500, 500), 0)
                 )
@@ -61,9 +48,6 @@ object AlarmHelper {
         isPlaying = false
 
         try {
-            defaultRingtone?.stop()
-            defaultRingtone = null
-
             val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 val vibratorManager =
                     context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager

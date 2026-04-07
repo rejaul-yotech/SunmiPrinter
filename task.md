@@ -58,3 +58,16 @@ This document tracks the execution progress of the ValtPrinter "Gold Standard" p
 - `[x]` **Progressive Transparency (Micro-states)**: Update `PrinterState` to support dynamic micro-state strings. Inject "Scanning...", "Handshake..." into UI during reconnection.
 - `[x]` **Offline Queue Assurance**: Display pending job count and an assurance message in `Error` and `Reconnecting` states.
 - `[x]` **Contextual Fallthrough Diagnostics**: Provide specific UI troubleshooting steps based on the original `ConnectionType` if recovery fails.
+
+## 10. Phase 8: High-End UX & Automatic Restoration
+- `[x]` **Pulsing Radar Animation**: Implement high-end visual feedback for the `Connecting` state.
+- `[x]` **Resilience Pill Interaction**: Make the minimized Hub clickable to expand back to full view.
+- `[x]` **Spelling Fix**: Corrected "DISSIMISS" to "DISMISS" in the Hub UI.
+- `[x]` **Handshake Reliability**: Ensured automatic reconnection is seamless and handles silent handshake failures with a binding delay.
+- `[x]` **Check Signal Now**: Integrated "Run Diagnostics" as a manual trigger for the recovery loop.
+
+## 11. Phase 9: The Technical Guardian (Final Refinements)
+- `[ ]` **Refine Hub Buttons**: Replace "Run Diagnostics" with "Rescan for Other Devices".
+- `[ ]` **Near-Instant Recovery**: Increase polling to 1s for the first 10s of any fault.
+- `[ ]` **Silent guardian**: Ensure all feedback is 100% haptic (Confirming removal of all audio triggers).
+- `[ ]` **Expand on Tap**: Verify minimized pill correctly triggers `expandHardwareHub()`.

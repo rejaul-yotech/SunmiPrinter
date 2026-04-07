@@ -1,6 +1,7 @@
 package com.yotech.valtprinter.ui.screen
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
@@ -9,8 +10,11 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -53,6 +57,7 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -68,10 +73,12 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yotech.valtprinter.core.util.AlarmHelper
 import com.yotech.valtprinter.data.local.entity.PrintJobEntity
@@ -186,15 +193,130 @@ fun PrinterScreen(
             } // End AnimatedContent
         } // End Column
 
-        // Top-level Box layer: ALARM OVERLAY
-        if (isHardwareFault) {
-            AlarmOverlay(
-                isAcknowledged = isAlarmAcknowledged,
-                onAcknowledge = { viewModel.acknowledgeAlarm() }
+        // Top-level Box layer: ELITE RESILIENCE HUB
+        AnimatedVisibility(
+            visible = isHardwareFault,
+            enter = fadeIn(tween(1000)),
+            exit = fadeOut(tween(800))
+        ) {
+            ResilienceHubOverlay(
+                state = state,
+                isMinimized = isAlarmAcknowledged,
+                onDismiss = { viewModel.acknowledgeAlarm() },
+                onExpand = { viewModel.expandHardwareHub() },
+                onRescan = { viewModel.disconnect() } // Rescan = Back to Idle
             )
         }
     } // End Box
 } // End fun
+
+@Composable
+fun ResilienceHubOverlay(
+    state: PrinterState,
+    isMinimized: Boolean,
+    onDismiss: () -> Unit,
+    onExpand: () -> Unit,
+    onRescan: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(if (isMinimized) Color.Transparent else Color.Black.copy(alpha = 0.6f))
+            .clickable(enabled = true) { 
+                if (isMinimized) onExpand() else { /* Do nothing, click inside card handles buttons */ }
+            },
+        contentAlignment = if (isMinimized) Alignment.BottomCenter else Alignment.Center
+    ) {
+        val containerModifier = if (isMinimized) {
+            Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+                .navigationBarsPadding()
+        } else {
+            Modifier
+                .padding(24.dp)
+                .fillMaxWidth(0.9f)
+        }
+
+        Card(
+            modifier = containerModifier,
+            shape = RoundedCornerShape(28.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 12.dp),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.1f))
+        ) {
+            Column(
+                modifier = Modifier.padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                if (!isMinimized) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = null,
+                        modifier = Modifier.size(64.dp),
+                        tint = Color(0xFFFFA500) // Calm warning orange
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    Text(
+                        "HARDWARE HUB",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.ExtraBold,
+                        letterSpacing = 2.sp
+                    )
+                    Text(
+                        "Physical link interrupted. Entering self-healing mode.",
+                        textAlign = TextAlign.Center,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(24.dp))
+                }
+
+                // Resilience Checklist
+                Surface(
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f),
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            strokeWidth = 2.dp,
+                            color = CyanElectric
+                        )
+                        Spacer(Modifier.width(16.dp))
+                        Column {
+                            val statusMsg = if (state is PrinterState.Reconnecting) state.microState else "Hardware offline"
+                            Text(statusMsg, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            Text("System is securing existing jobs...", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                }
+
+                if (!isMinimized) {
+                    Spacer(Modifier.height(24.dp))
+                    Button(
+                        onClick = onDismiss,
+                        modifier = Modifier.fillMaxWidth().height(56.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = CyanElectric),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Text("MINIMIZE TO HUB", color = NavySurface, fontWeight = FontWeight.Bold)
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    TextButton(onClick = onRescan) {
+                         Text("RESCAN FOR OTHER PRINTERS", color = MaterialTheme.colorScheme.error.copy(alpha = 0.8f))
+                    }
+                }
+            }
+        }
+    }
+}
 
 @Composable
 fun IdleStateView(onScan: () -> Unit) {
@@ -263,7 +385,60 @@ fun ScanningStateView(
 
 @Composable
 fun ConnectingStateView(deviceName: String) {
-    Text("Connecting to $deviceName...", style = MaterialTheme.typography.titleMedium)
+    val infiniteTransition = rememberInfiniteTransition(label = "Handshake")
+    
+    val pulse1 by infiniteTransition.animateFloat(
+        initialValue = 1f, targetValue = 2.5f,
+        animationSpec = infiniteRepeatable(tween(2000, easing = LinearEasing), RepeatMode.Restart), label = "P1"
+    )
+    val alpha1 by infiniteTransition.animateFloat(
+        initialValue = 0.6f, targetValue = 0f,
+        animationSpec = infiniteRepeatable(tween(2000, easing = LinearEasing), RepeatMode.Restart), label = "A1"
+    )
+
+    val pulse2 by infiniteTransition.animateFloat(
+        initialValue = 1f, targetValue = 2.5f,
+        animationSpec = infiniteRepeatable(tween(2000, delayMillis = 1000, easing = LinearEasing), RepeatMode.Restart), label = "P2"
+    )
+    val alpha2 by infiniteTransition.animateFloat(
+        initialValue = 0.6f, targetValue = 0f,
+        animationSpec = infiniteRepeatable(tween(2000, delayMillis = 1000, easing = LinearEasing), RepeatMode.Restart), label = "A2"
+    )
+
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            // Ripple 1
+            Box(Modifier.size(80.dp).graphicsLayer(scaleX = pulse1, scaleY = pulse1, alpha = alpha1).clip(CircleShape).background(CyanElectric))
+            // Ripple 2
+            Box(Modifier.size(80.dp).graphicsLayer(scaleX = pulse2, scaleY = pulse2, alpha = alpha2).clip(CircleShape).background(CyanElectric))
+            
+            // Core
+            Box(
+                Modifier.size(80.dp).clip(CircleShape).background(NavySurface).border(2.dp, CyanElectric, CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Default.Print, null, tint = CyanElectric, modifier = Modifier.size(32.dp))
+            }
+        }
+        
+        Spacer(Modifier.height(48.dp))
+        
+        Text(
+            "Securing Handshake...",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+            color = Color.White
+        )
+        Text(
+            "Establishing physical link with $deviceName",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.secondary
+        )
+    }
 }
 
 @Composable
@@ -631,56 +806,4 @@ fun DeviceListItem(device: PrinterDevice, onClick: () -> Unit) {
         },
         modifier = Modifier.clickable { onClick() }
     )
-}
-
-@Composable
-fun AlarmOverlay(isAcknowledged: Boolean, onAcknowledge: () -> Unit) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Red.copy(alpha = if (isAcknowledged) 0.8f else 0.5f))
-            .clickable(enabled = false) {}, // Intercept taps
-        contentAlignment = Alignment.Center
-    ) {
-        Card(
-            modifier = Modifier.padding(24.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
-        ) {
-            Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(
-                    Icons.Default.Warning,
-                    contentDescription = null,
-                    modifier = Modifier.size(64.dp),
-                    tint = MaterialTheme.colorScheme.error
-                )
-                Spacer(Modifier.height(16.dp))
-                Text(
-                    "HARDWARE FAULT",
-                    style = MaterialTheme.typography.headlineMedium,
-                    color = MaterialTheme.colorScheme.onErrorContainer
-                )
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    "Printer is out of paper, overheated, or cover is open.\nAll transactions are paused until resolved.",
-                    textAlign = TextAlign.Center
-                )
-                Spacer(Modifier.height(24.dp))
-
-                if (!isAcknowledged) {
-                    Button(
-                        onClick = onAcknowledge,
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                    ) {
-                        Text("ACKNOWLEDGE & SILENCE ALARM")
-                    }
-                } else {
-                    Text(
-                        "Alarm silenced. Please physically fix the printer. The system will resume automatically.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center
-                    )
-                }
-            }
-        }
-    }
 }

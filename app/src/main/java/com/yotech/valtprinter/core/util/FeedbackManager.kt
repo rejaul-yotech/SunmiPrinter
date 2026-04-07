@@ -1,9 +1,6 @@
 package com.yotech.valtprinter.core.util
 
 import android.content.Context
-import android.media.AudioAttributes
-import android.media.AudioManager
-import android.media.ToneGenerator
 import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
@@ -17,15 +14,11 @@ import javax.inject.Singleton
 class FeedbackManager @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
-    private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-    private val toneGenerator = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 80)
-
     /**
-     * Single sharp vibration "tap" (100ms) + Success tone for reconnect.
+     * Light single sharp vibration "tap" (100ms) for successful Handshake.
      */
     fun emitSuccess() {
         vibrate(100)
-        playTone(ToneGenerator.TONE_PROP_ACK)
     }
 
     /**
@@ -36,19 +29,12 @@ class FeedbackManager @Inject constructor(
     }
 
     /**
-     * Double vibration pulse (200ms) + Warning chime for unexpected disconnect persisting.
+     * elite "single aggressive double-tap" haptic feedback for critical failures.
      */
     fun emitCriticalWarning() {
-        vibrate(longArrayOf(0, 200, 100, 200))
-        playTone(ToneGenerator.TONE_PROP_NACK)
-    }
-
-    private fun playTone(toneType: Int) {
-        try {
-            toneGenerator.startTone(toneType, 200)
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
+        // pattern: [delay, vib1, pause, vib2]
+        // Aggressive: sharp 100ms followed by a deeper 300ms pulse
+        vibrate(longArrayOf(0, 100, 50, 300))
     }
 
     private fun vibrate(duration: Long) {
