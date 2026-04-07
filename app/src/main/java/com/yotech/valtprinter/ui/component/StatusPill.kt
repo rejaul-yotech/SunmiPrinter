@@ -34,7 +34,7 @@ fun StatusPill(
         else -> "Idle"
     }
 
-    val color = when (state) {
+    val targetColor = when (state) {
         is PrinterState.Connected -> Color.Green
         is PrinterState.Reconnecting -> Color(0xFFFFA500)
         is PrinterState.Connecting -> Color.Cyan
@@ -44,7 +44,7 @@ fun StatusPill(
     }
 
     val animatedColor by animateColorAsState(
-        targetValue = color,
+        targetValue = targetColor,
         animationSpec = tween(durationMillis = 500),
         label = "PillColor"
     )

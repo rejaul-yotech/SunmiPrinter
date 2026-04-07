@@ -35,6 +35,8 @@ import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.Print
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Usb
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.Button
@@ -414,7 +416,7 @@ fun HardwareDashboard(
                 LazyColumn(modifier = Modifier.fillMaxWidth()) {
                     items(recentJobs, key = { it.id }) { job ->
                         ListItem(
-                            headlineContent = { Text("Job ${job.externalJobId ?: "Manual"}") },
+                            headlineContent = { Text("Job ${job.externalJobId}") },
                             supportingContent = { Text("Status: ${job.status}") },
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                         )
@@ -425,7 +427,7 @@ fun HardwareDashboard(
                 // Diagnostic Card
                 Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.1f))) {
                     Text(
-                        (state as PrinterState.Error).diagnosticMessage,
+                        state.diagnosticMessage,
                         Modifier.padding(16.dp),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.error,
@@ -443,6 +445,8 @@ fun HardwareDashboard(
                     modifier = Modifier.fillMaxWidth().height(60.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = CyanElectric)
                 ) {
+                    Icon(Icons.Default.Print, contentDescription = null, tint = NavySurface)
+                    Spacer(Modifier.width(8.dp))
                     Text("PREVIEW TICKET", color = NavySurface, fontWeight = FontWeight.Bold)
                 }
                 Spacer(Modifier.height(12.dp))
@@ -451,14 +455,18 @@ fun HardwareDashboard(
                     modifier = Modifier.fillMaxWidth().height(50.dp),
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.error)
                 ) {
+                    Icon(Icons.Default.LinkOff, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                    Spacer(Modifier.width(8.dp))
                     Text("DISCONNECT PRINTER", color = MaterialTheme.colorScheme.error)
                 }
             } else if (state is PrinterState.Reconnecting) {
                 Button(
-                    onClick = onRetry, // In Reconnecting state, this could trigger a force retry or we can map it to STOP
+                    onClick = onRetry, // In Reconnecting state, this maps to stop
                     modifier = Modifier.fillMaxWidth().height(60.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(alpha = 0.8f))
                 ) {
+                    Icon(Icons.Default.Stop, contentDescription = null, tint = Color.White)
+                    Spacer(Modifier.width(8.dp))
                     Text("STOP RECOVERY", color = Color.White, fontWeight = FontWeight.Bold)
                 }
                 Spacer(Modifier.height(12.dp))
@@ -471,6 +479,8 @@ fun HardwareDashboard(
                     modifier = Modifier.fillMaxWidth().height(60.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = CyanElectric)
                 ) {
+                    Icon(Icons.Default.Refresh, contentDescription = null, tint = NavySurface)
+                    Spacer(Modifier.width(8.dp))
                     Text("TRY RECONNECTING", color = NavySurface, fontWeight = FontWeight.Bold)
                 }
                 Spacer(Modifier.height(12.dp))
