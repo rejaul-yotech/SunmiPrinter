@@ -144,7 +144,9 @@ fun PrinterScreen(
 
                 is PrinterState.Reconnecting -> ReconnectingStateView(
                     deviceName = currentState.deviceName,
-                    secondsRemaining = currentState.secondsRemaining
+                    secondsRemaining = currentState.secondsRemaining,
+                    microState = currentState.microState,
+                    recentJobs = recentJobs
                 )
 
                 is PrinterState.Connected -> ConnectedStateView(
@@ -156,6 +158,7 @@ fun PrinterScreen(
 
                 is PrinterState.Error -> ErrorStateView(
                     message = currentState.message,
+                    diagnosticMessage = currentState.diagnosticMessage,
                     onRetry = viewModel::reconnect,
                     onScanOthers = viewModel::startDiscovery
                 )
@@ -240,7 +243,7 @@ fun ConnectingStateView(deviceName: String) {
     }
 
 @Composable
-fun ReconnectingStateView(deviceName: String, secondsRemaining: Int) {
+fun ReconnectingStateView(deviceName: String, secondsRemaining: Int, microState: String, recentJobs: List<PrintJobEntity>) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
@@ -251,11 +254,20 @@ fun ReconnectingStateView(deviceName: String, secondsRemaining: Int) {
         Text(
             "Printer Offline",
             style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
             color = Color.Red
         )
         Text(
             "Attempting to reconnect to $deviceName...",
             style = MaterialTheme.typography.bodyMedium,
+            textAlign = TextAlign.Center
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            microState,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Bold,
+            color = CyanElectric,
             textAlign = TextAlign.Center
         )
         Spacer(Modifier.height(16.dp))
@@ -264,6 +276,21 @@ fun ReconnectingStateView(deviceName: String, secondsRemaining: Int) {
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.secondary
         )
+        Spacer(Modifier.height(32.dp))
+        
+        Card(
+            colors = CardDefaults.cardColors(containerColor = CyanElectric.copy(alpha = 0.1f)),
+            border = BorderStroke(1.dp, CyanElectric.copy(alpha = 0.3f))
+        ) {
+            Text(
+                "Safe State: ${recentJobs.size} order(s) secured in queue. You may continue taking new orders smoothly.",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = CyanElectric,
+                modifier = Modifier.padding(16.dp),
+                textAlign = TextAlign.Center
+            )
+        }
     }
 }
 
@@ -398,9 +425,9 @@ fun ConnectedStateView(
 }
 
 @Composable
-fun ErrorStateView(message: String, onRetry: () -> Unit, onScanOthers: () -> Unit) {
+fun ErrorStateView(message: String, diagnosticMessage: String, onRetry: () -> Unit, onScanOthers: () -> Unit) {
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(24.dp)) {
-        StatusPill(state = PrinterState.Error(message))
+        StatusPill(state = PrinterState.Error(message, diagnosticMessage))
         
         Spacer(Modifier.height(32.dp))
 
@@ -424,6 +451,22 @@ fun ErrorStateView(message: String, onRetry: () -> Unit, onScanOthers: () -> Uni
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+        
+        if (diagnosticMessage.isNotEmpty()) {
+            Spacer(Modifier.height(24.dp))
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)),
+            ) {
+                Text(
+                    text = "Troubleshoot: $diagnosticMessage",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(16.dp),
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
         Spacer(Modifier.height(32.dp))
         
         Button(

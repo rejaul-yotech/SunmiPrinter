@@ -28,9 +28,16 @@ class FeedbackManager @Inject constructor(
     }
 
     /**
-     * Double vibration pulse (200ms) + Warning chime for unexpected disconnect.
+     * Silent double vibration for initial graceful offline state (Silent Guardian).
      */
-    fun emitError() {
+    fun emitGracefulWarning() {
+        vibrate(longArrayOf(0, 150, 150, 150))
+    }
+
+    /**
+     * Double vibration pulse (200ms) + Warning chime for unexpected disconnect persisting.
+     */
+    fun emitCriticalWarning() {
         vibrate(longArrayOf(0, 200, 100, 200))
         playTone(ToneGenerator.TONE_PROP_NACK)
     }

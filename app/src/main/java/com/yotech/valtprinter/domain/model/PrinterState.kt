@@ -21,8 +21,8 @@ sealed class PrinterState {
     data class Connected(val device: PrinterDevice) : PrinterState()
 
     /** Recovering from an unexpected disconnect. */
-    data class Reconnecting(val deviceName: String, val secondsRemaining: Int) : PrinterState()
+    data class Reconnecting(val deviceName: String, val secondsRemaining: Int, val microState: String) : PrinterState()
 
-    /** A recoverable error occurred. User can retry. */
-    data class Error(val message: String) : PrinterState()
+    /** A recoverable error occurred. User can retry. Includes optional physical troubleshooting advice. */
+    data class Error(val message: String, val diagnosticMessage: String = "") : PrinterState()
 }

@@ -152,7 +152,7 @@ class PrinterRepositoryImpl @Inject constructor(
                         
                         if (!isManualDisconnect) {
                             Log.w("PRINTER_DEBUG", "Unexpected Disconnect! Triggering Self-Healing...")
-                            feedbackManager.emitError()
+                            feedbackManager.emitGracefulWarning()
                             triggerAutoReconnection(device)
                         } else {
                             _printerState.value = PrinterState.Idle
@@ -172,7 +172,18 @@ class PrinterRepositoryImpl @Inject constructor(
 
             while (secondsPassed < maxSeconds) {
                 val remaining = maxSeconds - secondsPassed
-                _printerState.value = PrinterState.Reconnecting(device.name, remaining)
+                
+                if (secondsPassed == 6) {
+                    feedbackManager.emitCriticalWarning()
+                }
+
+                val microState = when {
+                    secondsPassed < 2 -> "Scanning signal..."
+                    secondsPassed in 2..5 -> "Attempting handshake..."
+                    else -> "Verifying hardware identity..."
+                }
+
+                _printerState.value = PrinterState.Reconnecting(device.name, remaining, microState)
                 
                 Log.d("RECONNECT", "Attempting recovery... $remaining s remaining")
                 
@@ -214,7 +225,12 @@ class PrinterRepositoryImpl @Inject constructor(
             }
 
             if (activeCloudPrinter == null) {
-                _printerState.value = PrinterState.Error("Printer Lost. Please check power/cable.")
+                val diagnostic = when (device.connectionType) {
+                    ConnectionType.USB -> "Ensure the USB cable is firmly plugged into both the device and the printer base."
+                    ConnectionType.LAN -> "Check if the printer's network light is green. Ensure both devices are on the same WiFi."
+                    ConnectionType.BLUETOOTH -> "Ensure the printer is powered on and within 10 meters."
+                }
+                _printerState.value = PrinterState.Error("Connection Lost", diagnostic)
             }
         }
     }
