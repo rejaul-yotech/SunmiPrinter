@@ -67,7 +67,12 @@ This document tracks the execution progress of the ValtPrinter "Gold Standard" p
 - `[x]` **Check Signal Now**: Integrated "Run Diagnostics" as a manual trigger for the recovery loop.
 
 ## 11. Phase 9: The Technical Guardian (Final Refinements)
-- `[ ]` **Refine Hub Buttons**: Replace "Run Diagnostics" with "Rescan for Other Devices".
-- `[ ]` **Near-Instant Recovery**: Increase polling to 1s for the first 10s of any fault.
-- `[ ]` **Silent guardian**: Ensure all feedback is 100% haptic (Confirming removal of all audio triggers).
-- `[ ]` **Expand on Tap**: Verify minimized pill correctly triggers `expandHardwareHub()`.
+- `[x]` **Refine Hub Buttons**: Replaced "Run Diagnostics" with "Rescan for Other Devices" to eliminate redundancy.
+- `[x]` **Near-Instant Recovery**: Increased polling to 1s for the first 10s of any fault.
+- `[x]` **Silent guardian**: Ensured all feedback is 100% haptic (confirmed removal of all audio triggers).
+- `[x]` **Expand on Tap**: Verified minimized pill correctly triggers `expandHardwareHub()`.
+
+## 12. Phase 10: Bulletproof LAN Restoration
+- `[x]` **Concurrency Guard**: Prevented overlapping `connect()` handshakes during recovery using `isConnecting` flag.
+- `[x]` **Extended LAN Delay**: Increased post-discovery delay to 3s for LAN TCP stabilization to resolve SocketTimeoutExceptions.
+- `[x]` **Graceful Retries**: Handled socket timeouts silently during recovery, keeping the Hub persistent until success.

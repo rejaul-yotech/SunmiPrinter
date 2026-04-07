@@ -58,6 +58,10 @@ class PrinterRepositoryImpl @Inject constructor(
     // Store reference to pure domain device separately to rebuild `PrinterState.Connected` state
     private var connectedDevice: PrinterDevice? = null
 
+    // Concurrency Guard for Handshakes
+    private var isConnecting = false
+    private var isRecovering = false
+
     // Real-time Vitality: Heartbeat
     private var heartbeatJob: Job? = null
 
@@ -122,6 +126,9 @@ class PrinterRepositoryImpl @Inject constructor(
     }
 
     override suspend fun connect(device: PrinterDevice) {
+        if (isConnecting) return
+        isConnecting = true
+        
         stopAllSearches()
         reconnectionJob?.cancel()
         isManualDisconnect = false
@@ -130,6 +137,7 @@ class PrinterRepositoryImpl @Inject constructor(
         val discoveredPrinter = internalPrintersMap[device.id]
         if (discoveredPrinter == null) {
             _printerState.value = PrinterState.Error("Device instance lost. Please scan again.")
+            isConnecting = false
             return
         }
 
@@ -137,6 +145,8 @@ class PrinterRepositoryImpl @Inject constructor(
         
         cloudPrinter.connect(context, object : ConnectCallback {
             override fun onConnect() {
+                isConnecting = false
+                isRecovering = false
                 activeCloudPrinter = cloudPrinter
                 connectedDevice = device
                 try {
@@ -150,7 +160,13 @@ class PrinterRepositoryImpl @Inject constructor(
             }
 
             override fun onFailed(err: String?) {
-                _printerState.value = PrinterState.Error("Connect Failed", err ?: "Unknown error")
+                isConnecting = false
+                // Only show error UI if we aren't in a silent recovery loop
+                if (!isRecovering) {
+                    _printerState.value = PrinterState.Error("Connect Failed", err ?: "Unknown error")
+                } else {
+                    Log.w("RESILIENCE_HUB", "Handshake failed during recovery: $err. Will retry...")
+                }
             }
 
             override fun onDisConnect() {
@@ -177,6 +193,7 @@ class PrinterRepositoryImpl @Inject constructor(
      */
     private fun triggerAutoReconnection(device: PrinterDevice) {
         reconnectionJob?.cancel()
+        isRecovering = true
         reconnectionJob = repositoryScope.launch {
             lastConnectedDevice = device
             var attempts = 0
@@ -229,14 +246,17 @@ class PrinterRepositoryImpl @Inject constructor(
                                     else -> "LAN-${info.address}"
                                 }
 
-                                if (uniqueId == device.id) {
+                                if (uniqueId == device.id && !isConnecting) {
                                     found = true
+                                    // CRITICAL FIX: Update map with fresh instance
+                                    handlePrinterFound(printer) 
+                                    
                                     repositoryScope.launch {
-                                        // Robust Handshake: Force a small delay to allow SDK binding to stabilize
-                                        delay(1000)
-                                        Log.i("RESILIENCE_HUB", "Hardware found! Initializing handshake...")
+                                        // Robust Handshake Delay (3s for LAN TCP stabilization)
+                                        val handshakeDelay = if (method == 2000) 3000L else 1000L
+                                        delay(handshakeDelay)
+                                        Log.i("RESILIENCE_HUB", "Hardware found and mapped! Initializing handshake...")
                                         connect(device) 
-                                        // connect() will update the state to Connected if successful
                                     }
                                 }
                             }
