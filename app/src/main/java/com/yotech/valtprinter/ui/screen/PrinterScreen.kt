@@ -55,6 +55,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.TextUnit
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yotech.valtprinter.domain.model.ConnectionType
@@ -64,7 +65,8 @@ import com.yotech.valtprinter.ui.theme.CyanElectric
 import com.yotech.valtprinter.ui.theme.NavySurface
 import com.yotech.valtprinter.ui.theme.VioletElectric
 import com.yotech.valtprinter.ui.viewmodel.PrinterViewModel
-import com.yotech.valtprinter.ui.component.PrinterConnectivityDot
+import com.yotech.valtprinter.ui.component.StatusPill
+import androidx.compose.material3.LinearProgressIndicator
 
 @Composable
 fun PrinterScreen(
@@ -98,17 +100,27 @@ fun PrinterScreen(
                 .padding(horizontal = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Row(
+            Column(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                horizontalAlignment = Alignment.Start
             ) {
                 Text(
-                    text = "Sunmi Cloud Printer",
-                    style = MaterialTheme.typography.titleLarge,
+                    text = "Valt Printer",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.ExtraBold,
                     color = MaterialTheme.colorScheme.onBackground
                 )
-                PrinterConnectivityDot(state = state)
+                val subtitle = when(state) {
+                    is PrinterState.Scanning -> "Searching for nearby devices..."
+                    is PrinterState.Connected -> "Hardware Online"
+                    is PrinterState.Error -> "Connection Interrupted"
+                    else -> "Cloud Print Server"
+                }
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.secondary
+                )
             }
 
         Spacer(modifier = Modifier.height(24.dp))
@@ -198,7 +210,14 @@ fun ScanningStateView(
     onStopScan: () -> Unit
 ) {
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxSize()) {
-        RowHeader(title = "Scanning...", onAction = onStopScan, actionText = "Stop")
+        Box(modifier = Modifier.fillMaxWidth().height(4.dp)) {
+            LinearProgressIndicator(
+                modifier = Modifier.fillMaxWidth(),
+                color = CyanElectric,
+                trackColor = Color.Transparent
+            )
+        }
+        RowHeader(title = "Discovered Devices", onAction = onStopScan, actionText = "Stop Scan")
 
         if (devices.isEmpty()) {
             Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
@@ -267,6 +286,7 @@ fun ConnectedStateView(
                     .fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
+
                 val connectionIcon = when (device.connectionType) {
                     ConnectionType.USB -> Icons.Default.Usb
                     ConnectionType.BLUETOOTH -> Icons.Default.Bluetooth
@@ -277,39 +297,27 @@ fun ConnectedStateView(
                     modifier = Modifier
                         .size(80.dp)
                         .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primaryContainer),
+                        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = connectionIcon,
                         contentDescription = null,
                         modifier = Modifier.size(40.dp),
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-
-                    // Simple "Online" pulse/indicator at the bottom right of the icon
-                    Box(
-                        modifier = Modifier
-                            .size(16.dp)
-                            .align(Alignment.BottomEnd)
-                            .padding(2.dp)
-                            .clip(CircleShape)
-                            .background(Color.Green)
+                        tint = CyanElectric
                     )
                 }
 
                 Spacer(Modifier.height(24.dp))
 
-                Text(
-                    text = "PRINTER CONNECTED",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = CyanElectric,
-                    letterSpacing = TextUnit.Unspecified
-                )
+                StatusPill(state = PrinterState.Connected(device))
+
+                Spacer(Modifier.height(24.dp))
 
                 Text(
                     text = device.name,
                     style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center
                 )
 
@@ -317,6 +325,7 @@ fun ConnectedStateView(
                     Text(
                         text = device.address,
                         style = MaterialTheme.typography.bodySmall,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                         color = MaterialTheme.colorScheme.secondary
                     )
                 }
@@ -358,6 +367,7 @@ fun ConnectedStateView(
             Text(
                 "PREVIEW TICKET",
                 style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
                 color = NavySurface
             )
         }
@@ -372,13 +382,17 @@ fun ConnectedStateView(
             shape = RoundedCornerShape(12.dp),
             colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
             border = BorderStroke(
-                1.dp,
-                MaterialTheme.colorScheme.error.copy(alpha = 0.5f)
+                1.5.dp,
+                MaterialTheme.colorScheme.error.copy(alpha = 0.6f)
             )
         ) {
-            Icon(Icons.Default.LinkOff, contentDescription = null)
-            Spacer(Modifier.width(8.dp))
-            Text("Disconnect Device")
+            Icon(imageVector = Icons.Default.LinkOff, contentDescription = null)
+            Spacer(Modifier.width(12.dp))
+            Text(
+                "DISCONNECT PRINTER",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold
+            )
         }
     }
 }
@@ -386,16 +400,21 @@ fun ConnectedStateView(
 @Composable
 fun ErrorStateView(message: String, onRetry: () -> Unit, onScanOthers: () -> Unit) {
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(24.dp)) {
+        StatusPill(state = PrinterState.Error(message))
+        
+        Spacer(Modifier.height(32.dp))
+
         Icon(
-            imageVector = Icons.Default.Info,
+            imageVector = Icons.Default.LinkOff,
             contentDescription = null,
-            modifier = Modifier.size(64.dp),
-            tint = MaterialTheme.colorScheme.error
+            modifier = Modifier.size(80.dp),
+            tint = MaterialTheme.colorScheme.error.copy(alpha = 0.6f)
         )
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(24.dp))
         Text(
             "Connection Lost",
             style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.error
         )
         Spacer(Modifier.height(8.dp))

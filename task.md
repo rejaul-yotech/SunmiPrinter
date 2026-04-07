@@ -46,3 +46,9 @@ This document tracks the execution progress of the ValtPrinter "Gold Standard" p
 - `[x]` **StateFlow/SharedFlow Migration**: Upgraded ViewModel events to `SharedFlow` with `onBufferOverflow = DROP_OLDEST`.
 - `[x]` **Mandatory Hilt Injection**: Verified `UseCase` and `Repository` level Dagger-Hilt injection compliance.
 - `[x]` **Coding Rules Modernization**: Added zero-downtime rules and lifecycle-aware protocol to `CODING_RULES.md`.
+
+## 8. Phase 6: Elite UI/UX Refinement
+- `[x]` **Implement Unified Status Pill**: Merge the connectivity dot and status text into a single cohesive chip component.
+- `[x]` **Adaptive Smart Button**: Refactor the Disconnect/Reconnect button to dynamically switch styles (Outlined/Filled) and colors (Red/Cyan) based on state.
+- `[x]` **Discovery Cleanup**: Replace redundant "Scanning" text with a Linear Progress Bar and dynamic subtitles.
+- `[x]` **Visual Polish**: Apply Glassmorphism effects and enhanced typography weights to the Printer Card.

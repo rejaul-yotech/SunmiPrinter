@@ -61,6 +61,17 @@ While primarily a background servant, the app provides a premium management inte
 *   **Hardware Health**: Visual status of the Sunmi printer (Connection, Paper status).
 *   **Settings**: Toggles for log retention, startup behavior, and visual testing.
 
+### 5.1 Elite UX Design Standards
+To maintain a professional "Industrial Dashboard" feel, the UI follows these elite principles:
+*   **Single Source of Truth (Unified Status)**: Connection status is communicated via a "Status Pill" (Dot + Text) integrated directly into the printer card, rather than being scattered across the header.
+*   **Contextual Action Logic (Smart Button)**: The primary action button transforms based on state:
+    *   **Connected**: An "Outlined Crimson" button for Disconnection (Signal of system change).
+    *   **Disconnected**: A "Filled Electric Cyan" button for Reconnection (Signal of solution).
+*   **Streamlined Discovery**: 
+    *   Redundant "Scanning..." text is replaced by dynamic subtitles ("Searching for nearby devices...").
+    *   Scanning progress is shown via a non-blocking **Linear Progress Bar** across the top of the list.
+*   **Visual Hierarchy**: Uses Glassmorphism and specialized typography weights to distinguish between Hardware Identity (Bold) and Technical Metadata (Small/Monospaced).
+
 ---
 
 ## 6. Implementation Roadmap
