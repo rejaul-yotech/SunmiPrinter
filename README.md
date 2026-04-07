@@ -4,23 +4,24 @@ A premium, production-grade Android application for seamless integration with **
 
 ## 🚀 Features
 
+-   **Real-Time Vitality (Heartbeat)**: 3-second diagnostic pulses to ensure hardware is active and responsive.
+-   **Self-Healing Auto-Reconnection**: Intelligent 60-second recovery loop that automatically re-establishes connectivity with visual countdowns.
 -   **Multi-Protocol Discovery**: Simultaneous scanning for printers via **USB**, **LAN (Ethernet/Wi-Fi)**, and **Bluetooth**.
--   **USB Plug-and-Play (Auto-connect)**: Instant detection and automatic connection to USB printers upon device attachment.
--   **WYSIWYG Printing**: Renders Jetpack Compose UI directly to a 384px (80mm) bitmap, ensuring the printed receipt matches the on-screen preview perfectly.
--   **Hybrid Print Engine**:
-    -   **SDK Integration**: Native SUNMI SDK support for USB and general printing.
-    -   **Socket Bypass**: Direct ESC/POS raster command injection for high-speed, high-clarity LAN printing via port 9100.
--   **Modern UI/UX**: A state-driven, premium dark-themed interface built entirely with Jetpack Compose.
--   **Robust Error Handling**: Comprehensive lifecycle management and crash prevention (including `WindowRecomposer` isolation).
+-   **Jetpack Compose Dashboard**: A high-end, state-driven interface featuring:
+    *   **Breathing Status Auras**: Dynamic neon glows to indicate system health (Stable/Recovering/Fault).
+    *   **Micro-Animations**: Shaking hardware icons during faults and smooth transitions for state changes.
+-   **Multi-Sensory Feedback**: Guarded haptic pulses and audio tones for critical hardware events via the `FeedbackManager`.
+-   **WYSIWYG Printing**: Renders Jetpack Compose UI directly to a 384px (80mm) bitmap for perfect pixel-to-paper matches.
+-   **Stabilized Architecture**: Fully integrated Hilt-WorkManager pipeline for reliable background maintenance and log pruning.
 
 ## 🛠️ Architecture
 
-ValtPrinter follows the **Clean Architecture** pattern to ensure maintainability, testability, and scalability.
+ValtPrinter follows the **Clean Architecture** pattern to ensure maintainability, testability, and "Elite" stability.
 
--   **Domain Layer**: Contains pure business logic, Use Cases, and repository interfaces. No Android dependencies.
--   **Data Layer**: Implements repository interfaces, manages SDK integrations, and handles raw socket communications.
--   **Presentation Layer**: MVVM with Jetpack Compose. Reactive UI driven by `StateFlow` and structured `PrinterState` sealed classes.
--   **Core Utilities**: Includes the `BitmapRenderer` for off-screen Composable-to-Bitmap conversion.
+-   **Domain Layer**: Pure business logic, Use Cases, and repository interfaces.
+-   **Data Layer**: SDK integration, Raw ESC/POS socket engines, and Hilt-driven Background Workers.
+-   **Presentation Layer (MVVM)**: Reactive UI driven by `StateFlow`. Uses advanced Compose features like `infiniteTransition` for "Living UI" aesthetics.
+-   **Fault Tolerance Layer**: Deep-level safety guards around haptics and hardware calls to prevent process-killing exceptions.
 
 ## 📂 Implementation Tree
 
