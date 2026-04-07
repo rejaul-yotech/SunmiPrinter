@@ -19,9 +19,11 @@ import com.yotech.valtprinter.domain.model.PrintResult
 import com.yotech.valtprinter.domain.model.PrinterDevice
 import com.yotech.valtprinter.domain.model.PrinterState
 import com.yotech.valtprinter.domain.repository.PrinterRepository
+import com.yotech.valtprinter.core.util.FeedbackManager
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -37,11 +39,17 @@ import javax.inject.Singleton
 class PrinterRepositoryImpl @Inject constructor(
     @ApplicationContext private val context: Context,
     private val sdkPrintSource: SdkPrintSource,
-    private val rawSocketPrintSource: RawSocketPrintSource
+    private val rawSocketPrintSource: RawSocketPrintSource,
+    private val feedbackManager: FeedbackManager
 ) : PrinterRepository {
 
     private val printMutex = Mutex()
     private var activeCloudPrinter: CloudPrinter? = null
+
+    // Tracking for Self-Healing
+    private var lastConnectedDevice: PrinterDevice? = null
+    private var isManualDisconnect = false
+    private var reconnectionJob: Job? = null
 
     // Store reference to pure domain device separately to rebuild `PrinterState.Connected` state
     private var connectedDevice: PrinterDevice? = null
@@ -107,6 +115,8 @@ class PrinterRepositoryImpl @Inject constructor(
 
     override suspend fun connect(device: PrinterDevice) {
         stopAllSearches()
+        reconnectionJob?.cancel()
+        isManualDisconnect = false
         _printerState.value = PrinterState.Connecting(device.name)
 
         val discoveredPrinter = internalPrintersMap[device.id]
@@ -139,10 +149,73 @@ class PrinterRepositoryImpl @Inject constructor(
                     if (activeCloudPrinter === cloudPrinter) {
                         activeCloudPrinter = null
                         connectedDevice = null
-                        _printerState.value = PrinterState.Idle
+                        
+                        if (!isManualDisconnect) {
+                            Log.w("PRINTER_DEBUG", "Unexpected Disconnect! Triggering Self-Healing...")
+                            feedbackManager.emitError()
+                            triggerAutoReconnection(device)
+                        } else {
+                            _printerState.value = PrinterState.Idle
+                        }
                     }
                 }
             })
+        }
+    }
+
+    private fun triggerAutoReconnection(device: PrinterDevice) {
+        reconnectionJob?.cancel()
+        reconnectionJob = repositoryScope.launch {
+            lastConnectedDevice = device
+            var secondsPassed = 0
+            val maxSeconds = 60
+
+            while (secondsPassed < maxSeconds) {
+                val remaining = maxSeconds - secondsPassed
+                _printerState.value = PrinterState.Reconnecting(device.name, remaining)
+                
+                Log.d("RECONNECT", "Attempting recovery... $remaining s remaining")
+                
+                // Silent search for the specific device
+                var found = false
+                val method = when {
+                    device.id.startsWith("USB") -> 1000
+                    device.id.startsWith("BT") -> 3000
+                    else -> 2000
+                }
+
+                try {
+                    SunmiPrinterManager.getInstance().searchCloudPrinter(context, method) { printer ->
+                        if (printer != null && !found) {
+                            val info = printer.cloudPrinterInfo
+                            val uniqueId = when (method) {
+                                1000 -> "USB-${info.vid}-${info.pid}"
+                                3000 -> "BT-${info.mac}"
+                                else -> "LAN-${info.address}"
+                            }
+                            
+                            if (uniqueId == device.id) {
+                                found = true
+                                repositoryScope.launch { 
+                                    connect(device) 
+                                    feedbackManager.emitSuccess()
+                                }
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e("RECONNECT", "Search failed: ${e.message}")
+                }
+
+                if (found) break
+
+                delay(2000) // Retry every 2 seconds
+                secondsPassed += 2
+            }
+
+            if (activeCloudPrinter == null) {
+                _printerState.value = PrinterState.Error("Printer Lost. Please check power/cable.")
+            }
         }
     }
 
@@ -240,10 +313,13 @@ class PrinterRepositoryImpl @Inject constructor(
     }
 
     override fun disconnect() {
+        isManualDisconnect = true
+        reconnectionJob?.cancel()
         stopScan()
         activeCloudPrinter?.release(context)
         activeCloudPrinter = null
         connectedDevice = null
+        lastConnectedDevice = null
         _printerState.value = PrinterState.Idle
         _discoveredDevices.value = emptyList()
         internalPrintersMap.clear()

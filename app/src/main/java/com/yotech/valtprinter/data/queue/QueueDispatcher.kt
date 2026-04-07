@@ -33,10 +33,16 @@ class QueueDispatcher @Inject constructor(
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var dispatcherJob: Job? = null
+    private var stateMonitorJob: Job? = null
     private val CHUNK_SIZE_PX = 400 // Atomic slice height for persistence
+
+    private var wasAutoPaused = false
 
     fun start(serviceContext: Context) {
         if (dispatcherJob?.isActive == true) return
+        
+        // Start monitoring state for Auto-Resume
+        startStateMonitoring()
 
         dispatcherJob = scope.launch {
             while (isActive) {
@@ -154,8 +160,35 @@ class QueueDispatcher @Inject constructor(
         printerDataStore.setPrinterPaused(true)
     }
 
+    private fun startStateMonitoring() {
+        stateMonitorJob?.cancel()
+        stateMonitorJob = scope.launch {
+            printerRepository.printerState.collect { state ->
+                when (state) {
+                    is com.yotech.valtprinter.domain.model.PrinterState.Connected -> {
+                        if (wasAutoPaused) {
+                            Log.d("QUEUE_DISPATCHER", "Self-Healing: Printer reconnected. Resuming queue...")
+                            printerDataStore.setPrinterPaused(false)
+                            wasAutoPaused = false
+                        }
+                    }
+                    is com.yotech.valtprinter.domain.model.PrinterState.Reconnecting -> {
+                        if (!printerDataStore.isPrinterPaused()) {
+                            Log.w("QUEUE_DISPATCHER", "Printer lost mid-operation. Auto-pausing queue.")
+                            printerDataStore.setPrinterPaused(true)
+                            wasAutoPaused = true
+                        }
+                    }
+                    else -> {}
+                }
+            }
+        }
+    }
+
     fun stop() {
         dispatcherJob?.cancel()
+        stateMonitorJob?.cancel()
         dispatcherJob = null
+        stateMonitorJob = null
     }
 }

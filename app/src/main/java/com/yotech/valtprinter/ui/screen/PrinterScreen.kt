@@ -64,6 +64,7 @@ import com.yotech.valtprinter.ui.theme.CyanElectric
 import com.yotech.valtprinter.ui.theme.NavySurface
 import com.yotech.valtprinter.ui.theme.VioletElectric
 import com.yotech.valtprinter.ui.viewmodel.PrinterViewModel
+import com.yotech.valtprinter.ui.component.PrinterConnectivityDot
 
 @Composable
 fun PrinterScreen(
@@ -97,11 +98,18 @@ fun PrinterScreen(
                 .padding(horizontal = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text(
-            text = "Sunmi Cloud Printer",
-            style = MaterialTheme.typography.headlineMedium,
-            color = MaterialTheme.colorScheme.onBackground
-        )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Sunmi Cloud Printer",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                PrinterConnectivityDot(state = state)
+            }
 
         Spacer(modifier = Modifier.height(24.dp))
 
@@ -122,6 +130,11 @@ fun PrinterScreen(
                     deviceName = currentState.deviceName
                 )
 
+                is PrinterState.Reconnecting -> ReconnectingStateView(
+                    deviceName = currentState.deviceName,
+                    secondsRemaining = currentState.secondsRemaining
+                )
+
                 is PrinterState.Connected -> ConnectedStateView(
                     device = currentState.device,
                     recentJobs = recentJobs,
@@ -131,7 +144,8 @@ fun PrinterScreen(
 
                 is PrinterState.Error -> ErrorStateView(
                     message = currentState.message,
-                    onRetry = viewModel::startDiscovery
+                    onRetry = viewModel::reconnect,
+                    onScanOthers = viewModel::startDiscovery
                 )
             }
         } // End AnimatedContent
@@ -203,13 +217,34 @@ fun ScanningStateView(
 
 @Composable
 fun ConnectingStateView(deviceName: String) {
+        Text("Connecting to $deviceName...", style = MaterialTheme.typography.titleMedium)
+    }
+
+@Composable
+fun ReconnectingStateView(deviceName: String, secondsRemaining: Int) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+        verticalArrangement = Arrangement.Center,
+        modifier = Modifier.padding(32.dp)
     ) {
-        CircularProgressIndicator(color = CyanElectric)
+        CircularProgressIndicator(color = Color.Red, strokeWidth = 2.dp)
+        Spacer(Modifier.height(24.dp))
+        Text(
+            "Printer Offline",
+            style = MaterialTheme.typography.headlineSmall,
+            color = Color.Red
+        )
+        Text(
+            "Attempting to reconnect to $deviceName...",
+            style = MaterialTheme.typography.bodyMedium,
+            textAlign = TextAlign.Center
+        )
         Spacer(Modifier.height(16.dp))
-        Text("Connecting to $deviceName...", style = MaterialTheme.typography.titleMedium)
+        Text(
+            "Time remaining: ${secondsRemaining}s",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.secondary
+        )
     }
 }
 
@@ -349,8 +384,8 @@ fun ConnectedStateView(
 }
 
 @Composable
-fun ErrorStateView(message: String, onRetry: () -> Unit) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+fun ErrorStateView(message: String, onRetry: () -> Unit, onScanOthers: () -> Unit) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(24.dp)) {
         Icon(
             imageVector = Icons.Default.Info,
             contentDescription = null,
@@ -359,13 +394,34 @@ fun ErrorStateView(message: String, onRetry: () -> Unit) {
         )
         Spacer(Modifier.height(16.dp))
         Text(
-            message,
-            style = MaterialTheme.typography.titleMedium,
+            "Connection Lost",
+            style = MaterialTheme.typography.headlineSmall,
             color = MaterialTheme.colorScheme.error
         )
-        Spacer(Modifier.height(24.dp))
-        Button(onClick = onRetry) {
-            Text("Retry Scan")
+        Spacer(Modifier.height(8.dp))
+        Text(
+            message,
+            style = MaterialTheme.typography.bodyMedium,
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(32.dp))
+        
+        Button(
+            onClick = onRetry,
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(containerColor = CyanElectric)
+        ) {
+            Text("TRY RECONNECTING", color = NavySurface)
+        }
+        
+        Spacer(Modifier.height(12.dp))
+        
+        OutlinedButton(
+            onClick = onScanOthers,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("SCAN FOR OTHER PRINTERS")
         }
     }
 }
@@ -454,4 +510,4 @@ fun AlarmOverlay(isAcknowledged: Boolean, onAcknowledge: () -> Unit) {
             }
         }
     }
-}
+}

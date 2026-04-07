@@ -128,6 +128,11 @@ class PrinterViewModel @Inject constructor(
         disconnectUseCase()
     }
 
+    fun reconnect() {
+        // Restart the automatic scan/connect flow
+        startDiscovery()
+    }
+
     override fun onCleared() {
         super.onCleared()
         disconnectUseCase()
