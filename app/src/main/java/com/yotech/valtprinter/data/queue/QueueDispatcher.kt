@@ -88,53 +88,63 @@ class QueueDispatcher @Inject constructor(
                     var isFinished = false
                     var lastError: String? = null
 
-                    while (!isFinished && isActive) {
-                        val captureView = printerRepository.getCaptureView()
-                        if (captureView == null) {
-                            lastError = "Capture View is null. UI not ready for headless rendering."
-                            break
-                        }
+                    // Initialize the SDK buffer BEFORE the first chunk.
+                    // This clears any stale commands from a previous incomplete job on USB/BT.
+                    // For LAN this is a no-op (raw socket handles each chunk atomically).
+                    val initResult = printerRepository.initPrintJob()
+                    if (initResult is PrintResult.Failure) {
+                        lastError = "Buffer init failed: ${initResult.reason}"
+                    } else {
+                        while (!isFinished && isActive) {
+                            val captureView = printerRepository.getCaptureView()
+                            if (captureView == null) {
+                                lastError = "Capture View is null. UI not ready for headless rendering."
+                                break
+                            }
 
-                        // Render exactly one slice based on our current persistent index
-                        val bitmapChunk = BitmapRenderer.renderReceiptChunk(
-                            parentView = captureView, // Now safely non-null
-                            chunkIndex = currentChunk,
-                            chunkSizePx = CHUNK_SIZE_PX
-                        ) {
-                            when (printPayload) {
-                                is com.yotech.valtprinter.domain.model.PrintPayload.Billing -> {
-                                    com.yotech.valtprinter.ui.receipt.PosPrintingScreen(data = printPayload.data, isScrollEnabled = false)
-                                }
-                                is com.yotech.valtprinter.domain.model.PrintPayload.RawText -> {
-                                    com.yotech.valtprinter.ui.receipt.RawTextScreen(text = printPayload.text)
-                                }
-                                is com.yotech.valtprinter.domain.model.PrintPayload.Unknown -> {
-                                    com.yotech.valtprinter.ui.receipt.RawTextScreen(text = printPayload.rawJson)
+                            // Render exactly one slice based on our current persistent index
+                            val bitmapChunk = BitmapRenderer.renderReceiptChunk(
+                                parentView = captureView,
+                                chunkIndex = currentChunk,
+                                chunkSizePx = CHUNK_SIZE_PX
+                            ) {
+                                when (printPayload) {
+                                    is com.yotech.valtprinter.domain.model.PrintPayload.Billing -> {
+                                        com.yotech.valtprinter.ui.receipt.PosPrintingScreen(data = printPayload.data, isScrollEnabled = false)
+                                    }
+                                    is com.yotech.valtprinter.domain.model.PrintPayload.RawText -> {
+                                        com.yotech.valtprinter.ui.receipt.RawTextScreen(text = printPayload.text)
+                                    }
+                                    is com.yotech.valtprinter.domain.model.PrintPayload.Unknown -> {
+                                        com.yotech.valtprinter.ui.receipt.RawTextScreen(text = printPayload.rawJson)
+                                    }
                                 }
                             }
-                        }
 
-                        if (bitmapChunk == null) {
-                            isFinished = true
-                            break
-                        }
+                            if (bitmapChunk == null) {
+                                isFinished = true
+                                break
+                            }
 
-                        // Physical Flush
-                        val result = printerRepository.printChunk(bitmapChunk, isLastChunk = false)
+                            // Physical Flush: buffer chunk in SDK (no commit yet for USB/BT)
+                            val result = printerRepository.printChunk(bitmapChunk, isLastChunk = false)
 
-                        if (result is PrintResult.Success) {
-                            currentChunk++
-                            printDao.updateChunkProgress(nextJob.id, currentChunk)
-                            printerDataStore.updateAccumulatedHeight(bitmapChunk.height)
-                        } else {
-                            lastError = (result as PrintResult.Failure).reason
-                            break
+                            if (result is PrintResult.Success) {
+                                currentChunk++
+                                printDao.updateChunkProgress(nextJob.id, currentChunk)
+                                printerDataStore.updateAccumulatedHeight(bitmapChunk.height)
+                            } else {
+                                lastError = (result as PrintResult.Failure).reason
+                                break
+                            }
                         }
-                    }
+                    } // end else (initPrintJob succeeded)
 
                     // 5. Finalization (Cut & Status Update)
                     if (isFinished) {
-                        printerRepository.finalCut() 
+                        // For USB/BT: commitAndCut sends the entire buffered receipt atomically.
+                        // For LAN: no-op (raw socket already sent feed+cut per chunk).
+                        printerRepository.finalCut()
                         printDao.updateStatus(nextJob.id, PrintStatus.COMPLETED)
                         callbackManager.notifySuccess(nextJob.externalJobId)
                     } else if (lastError?.contains("Paper Out", ignoreCase = true) == true) {

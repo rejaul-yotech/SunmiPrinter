@@ -34,8 +34,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import java.net.InetSocketAddress
-import java.net.Socket
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -339,14 +337,38 @@ class PrinterRepositoryImpl @Inject constructor(
     }
 
     override suspend fun finalCut(): PrintResult {
-        val printer = activeCloudPrinter ?: return PrintResult.Failure("Printer null")
-        return try {
-            printer.cutPaper(true)
-            printer.commitTransBuffer(null)
-            PrintResult.Success
-        } catch (e: Exception) {
-            PrintResult.Failure("Cut Failed: ${e.message}")
+        val printer = activeCloudPrinter ?: return PrintResult.Failure("Printer null on finalCut")
+        val device = connectedDevice
+
+        // For LAN: RawSocketPrintSource already sent the ESC J feed + GS V cut inline,
+        // as part of every printBitmap() call. Sending an additional SDK cut here would
+        // either produce a redundant blank-paper cut or be silently ignored by the printer.
+        if (device?.connectionType == ConnectionType.LAN && !device.address.isNullOrEmpty()) {
+            Log.d("PRINTER_DEBUG", "finalCut: LAN path — cut already delivered via raw socket.")
+            return PrintResult.Success
         }
+
+        // For USB/BT: All chunks have been buffered in the SDK transaction buffer.
+        // This single awaitable commitAndCut delivers: lineFeed + cutPaper + commitTransBuffer.
+        // We suspend until the printer confirms receipt, guaranteeing the cut happens only
+        // AFTER the printer has physically processed all buffered image data.
+        Log.d("PRINTER_DEBUG", "finalCut: USB/BT path — committing buffer and cutting.")
+        return sdkPrintSource.commitAndCut(printer)
+    }
+
+    override suspend fun initPrintJob(): PrintResult {
+        val printer = activeCloudPrinter ?: return PrintResult.Failure("Not connected")
+        val device = connectedDevice ?: return PrintResult.Failure("No active device")
+
+        // LAN jobs print via raw socket — there is no SDK buffer to initialize.
+        if (device.connectionType == ConnectionType.LAN && device.address.isNotEmpty()) {
+            return PrintResult.Success
+        }
+
+        // USB/BT: clear the SDK's internal command buffer before the first chunk.
+        // This ensures no stale content from a previous incomplete job is committed.
+        sdkPrintSource.initBuffer(printer)
+        return PrintResult.Success
     }
 
     override suspend fun printReceipt(bitmap: Bitmap): PrintResult {
@@ -399,19 +421,23 @@ class PrinterRepositoryImpl @Inject constructor(
             }
 
             ConnectionType.LAN -> {
-                try {
-                    val socket = Socket()
-                    socket.connect(InetSocketAddress(device.address, device.port), 1000)
-                    socket.close()
-                    true
-                } catch (e: Exception) {
-                    false
-                }
+                // CRITICAL FIX: Do NOT probe port 9100 via raw socket.
+                //
+                // The Sunmi SDK uses port 9100 for its own management protocol.
+                // Opening a competing raw TCP connection to 9100 every 3 seconds
+                // hijacks the SDK's byte stream, causing the printer to force-close
+                // the SDK session and fire onDisConnect() — triggering a false
+                // reconnect loop every 3 seconds.
+                //
+                // The correct pattern: trust the SDK's onDisConnect() callback.
+                // It fires reliably when the LAN link truly drops (cable pull, power off, etc.).
+                Log.d("VITALITY", "LAN heartbeat: trusting SDK session for ${device.address}")
+                true
             }
 
             ConnectionType.BLUETOOTH -> {
-                // For BT we rely on OS connectivity or a quick check if possible
-                true // Simplified for demo
+                // BT relies on OS connectivity or SDK disconnect callbacks.
+                true
             }
         }
     }

@@ -76,3 +76,60 @@ This document tracks the execution progress of the ValtPrinter "Gold Standard" p
 - `[x]` **Concurrency Guard**: Prevented overlapping `connect()` handshakes during recovery using `isConnecting` flag.
 - `[x]` **Extended LAN Delay**: Increased post-discovery delay to 3s for LAN TCP stabilization to resolve SocketTimeoutExceptions.
 - `[x]` **Graceful Retries**: Handled socket timeouts silently during recovery, keeping the Hub persistent until success.
+
+## 13. Phase 11: Perfecting USB/BT Quality
+- `[x]` **Align to Left**: `setAlignment(AlignStyle.LEFT)` called in every `addToBuffer()` call.
+- `[x]` **Advance Before Cut**: `commitAndCut()` feeds 6 lines (~18mm) before cutting — ensures last pixel clears the cutter blade on NT311.
+- `[x]` **Seamless Chunking**: Refactored to proper SDK transaction model — all chunks are buffered without `commitTransBuffer`, a single atomic `commitAndCut` finalizes the receipt. Eliminates the race condition that caused premature paper cutting on USB/BT.
+
+## 14. Phase 12: Critical Bug Fixes (Active — Needs Verification)
+
+> **CURRENT STATUS**: Fixes applied. Build and test required.
+
+### Bug A — LAN Auto-Disconnect/Reconnect Loop 🔴
+
+**Symptom**: When connected via LAN and navigating between screens (e.g., PrinterScreen → ReceiptPreviewScreen → back), the printer auto-disconnects and immediately reconnects in a continuous loop. Visible in logcat as rapid `onDisConnect` → `triggerAutoReconnection` → `onConnect` cycles every ~3 seconds.
+
+**Root Cause**: `checkPhysicalConnection()` for LAN was probing **port 9100 via raw TCP socket** every 3 seconds (the heartbeat). The Sunmi SDK uses port 9100 for its own internal protocol session. Our raw socket probe was **hijacking the SDK's byte stream** — the printer received unexpected data on the SDK session, force-closed it, and fired `onDisConnect()`. This triggered `triggerAutoReconnection()` which reconnected quickly, and 3 seconds later the probe fired again → infinite loop.
+
+**Files Changed**:
+- `PrinterRepositoryImpl.kt` → `checkPhysicalConnection()`: LAN case now returns `true` unconditionally. The SDK's own `onDisConnect()` callback is the reliable source of truth for real disconnects (e.g., cable pull, power off). Raw socket probes are permanently removed.
+
+**Verification**: Connect via LAN. Navigate to preview screen and back multiple times. Printer state must remain `Connected` throughout. Heartbeat logcat should show `"LAN heartbeat: trusting SDK session"` every 3s with no reconnection messages.
+
+---
+
+### Bug B — USB Printing Cut Before Full Content Printed 🔴
+
+**Symptom**: When printing via USB (or Bluetooth), the paper is cut before the entire receipt has printed. The remaining content appears at the top of the NEXT paper sheet.
+
+**Root Cause — Layer 1 (Race Condition, fixed in Phase 11)**: `commitTransBuffer` was called after every 400px chunk. The SDK callback fires when data enters the kernel USB driver buffer — NOT when the printer head physically advances through those pixels. `finalCut()` was then called immediately after, sending the cut command before the printer finished mechanically processing the last chunk.
+
+**Root Cause — Layer 2 (Stale Buffer, fixed in Phase 12)**: `initTransBuffer()` was never called before a new print job. The SDK's internal buffer retains stale commands from any previous incomplete/failed job. These stale commands were being committed together with the new job content, causing corrupted output and off-sync line positions.
+
+**Files Changed**:
+- `SdkPrintSource.kt`:
+  - New `initBuffer(printer)` → calls `printer.initTransBuffer()` to clear the buffer
+  - `printBitmapChunk(isLastChunk=true)` → calls `initBuffer` first before `addToBuffer`
+  - `printBitmap()` → calls `initBuffer` first
+- `PrinterRepository.kt` → Added `initPrintJob()` interface method
+- `PrinterRepositoryImpl.kt` → `initPrintJob()` calls `sdkPrintSource.initBuffer()` for USB/BT; no-op for LAN
+- `QueueDispatcher.kt` → Calls `printerRepository.initPrintJob()` before the chunk rendering loop
+
+**Full Print Flow (USB/BT) After Fix**:
+```
+1. initPrintJob()        → printer.initTransBuffer()   [clean slate]
+2. printChunk(chunk0)    → printer.printImage(chunk0)  [buffer only, no commit]
+3. printChunk(chunk1)    → printer.printImage(chunk1)  [buffer only, no commit]
+4. finalCut()            → printer.lineFeed(6)
+                           printer.cutPaper(true)
+                           printer.commitTransBuffer()  [ONE atomic send, awaits hardware ACK]
+                           ✅ Cut only after printer confirms all content received
+```
+
+**Verification**:
+1. Connect via USB. Press "PREVIEW TICKET" → "PRINT TO SUNMI".
+2. The FULL receipt must print before the paper is cut.
+3. No content should appear on the next paper sheet.
+4. Check logcat for `"Buffer initialized — clean slate for new job"` before each print.
+5. Check logcat for `"commitAndCut: printer confirmed receipt ✔"` after successful cut.
