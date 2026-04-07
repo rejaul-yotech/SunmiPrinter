@@ -26,17 +26,10 @@ class SdkPrintSource @Inject constructor() {
      */
     fun initBuffer(printer: CloudPrinter) {
         try {
-            printer.commitTransBuffer(object : ResultCallback {
-                override fun onComplete() {
-                    Log.d("SDK_PRINT", "Buffer initialized — clean slate for new job")
-                }
-
-                override fun onFailed(p0: CloudPrinterStatus?) {
-                    Log.d("SDK_PRINT", "Buffer initialization failed — $p0")
-                }
-            })
+            printer.clearTransBuffer()
+            Log.d("SDK_PRINT", "Buffer cleared — clean slate for new job")
         } catch (e: Exception) {
-            Log.e("SDK_PRINT", "initTransBuffer failed: ${e.message}", e)
+            Log.e("SDK_PRINT", "clearTransBuffer failed: ${e.message}", e)
         }
     }
 

@@ -105,11 +105,11 @@ This document tracks the execution progress of the ValtPrinter "Gold Standard" p
 
 **Root Cause — Layer 1 (Race Condition, fixed in Phase 11)**: `commitTransBuffer` was called after every 400px chunk. The SDK callback fires when data enters the kernel USB driver buffer — NOT when the printer head physically advances through those pixels. `finalCut()` was then called immediately after, sending the cut command before the printer finished mechanically processing the last chunk.
 
-**Root Cause — Layer 2 (Stale Buffer, fixed in Phase 12)**: `initTransBuffer()` was never called before a new print job. The SDK's internal buffer retains stale commands from any previous incomplete/failed job. These stale commands were being committed together with the new job content, causing corrupted output and off-sync line positions.
+**Root Cause — Layer 2 (Stale Buffer, fixed in Phase 12)**: `clearTransBuffer()` was never called before a new print job. The SDK's internal buffer retains stale commands from any previous incomplete/failed job. These stale commands were being committed together with the new job content, causing corrupted output and off-sync line positions.
 
 **Files Changed**:
 - `SdkPrintSource.kt`:
-  - New `initBuffer(printer)` → calls `printer.initTransBuffer()` to clear the buffer
+  - New `initBuffer(printer)` → calls `printer.clearTransBuffer()` to clear the buffer
   - `printBitmapChunk(isLastChunk=true)` → calls `initBuffer` first before `addToBuffer`
   - `printBitmap()` → calls `initBuffer` first
 - `PrinterRepository.kt` → Added `initPrintJob()` interface method
@@ -118,7 +118,7 @@ This document tracks the execution progress of the ValtPrinter "Gold Standard" p
 
 **Full Print Flow (USB/BT) After Fix**:
 ```
-1. initPrintJob()        → printer.initTransBuffer()   [clean slate]
+1. initPrintJob()        → printer.clearTransBuffer()   [clean slate]
 2. printChunk(chunk0)    → printer.printImage(chunk0)  [buffer only, no commit]
 3. printChunk(chunk1)    → printer.printImage(chunk1)  [buffer only, no commit]
 4. finalCut()            → printer.lineFeed(6)
