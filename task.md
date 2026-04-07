@@ -52,3 +52,9 @@ This document tracks the execution progress of the ValtPrinter "Gold Standard" p
 - `[x]` **Adaptive Smart Button**: Refactor the Disconnect/Reconnect button to dynamically switch styles (Outlined/Filled) and colors (Red/Cyan) based on state.
 - `[x]` **Discovery Cleanup**: Replace redundant "Scanning" text with a Linear Progress Bar and dynamic subtitles.
 - `[x]` **Visual Polish**: Apply Glassmorphism effects and enhanced typography weights to the Printer Card.
+
+## 9. Phase 7: Masterclass Resilience UX
+- [ ] **Silent Guardian Protocol**: Refactor `FeedbackManager` with escalating feedback (haptic first, tone after 5s). Modify reconnection loop to handle this timing.
+- [ ] **Progressive Transparency (Micro-states)**: Update `PrinterState` to support dynamic micro-state strings. Inject "Scanning...", "Handshake..." into UI during reconnection.
+- [ ] **Offline Queue Assurance**: Display pending job count and an assurance message in `Error` and `Reconnecting` states.
+- [ ] **Contextual Fallthrough Diagnostics**: Provide specific UI troubleshooting steps based on the original `ConnectionType` if recovery fails.

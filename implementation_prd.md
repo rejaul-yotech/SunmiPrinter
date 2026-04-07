@@ -72,6 +72,13 @@ To maintain a professional "Industrial Dashboard" feel, the UI follows these eli
     *   Scanning progress is shown via a non-blocking **Linear Progress Bar** across the top of the list.
 *   **Visual Hierarchy**: Uses Glassmorphism and specialized typography weights to distinguish between Hardware Identity (Bold) and Technical Metadata (Small/Monospaced).
 
+### 5.2 Top-Tier (Masterclass) Resilience UX
+To provide psychological safety and prevent operator panic during disconnections, the system implements:
+*   **The "Silent Guardian" Protocol**: Escalating sensory feedback. Accidental cable bumps trigger a silent haptic pulse. If unresolved after 5 seconds, it escalates to an audible warning tone.
+*   **Offline Queue Assurance**: The UI explicitly informs cashiers that orders are secured and they can continue working, eliminating workflow stoppage panic.
+*   **Progressive Transparency**: Displays live micro-states ("Scanning USB...", "Handshake...") instead of generic generic "Retrying..." spinners.
+*   **Contextual Fallthrough Diagnostics**: Provides specific, actionable troubleshooting advice based on the exact hardware connection type (USB vs LAN vs BT) if auto-recovery fails.
+
 ---
 
 ## 6. Implementation Roadmap
@@ -79,3 +86,6 @@ To maintain a professional "Industrial Dashboard" feel, the UI follows these eli
 2.  **Phase 2**: Build the `QueueDispatcher` and Foreground Service (The heart of the server).
 3.  **Phase 3**: Integrate real-time hardware error handling (Resilience).
 4.  **Phase 4**: Add WorkManager for housekeeping and the Control Center UI (Governance).
+5.  **Phase 5**: Control Center & Background Work.
+6.  **Phase 6**: Elite UI/UX Refinement (Dashboard standards, Pill, Smart buttons).
+7.  **Phase 7**: Masterclass Resilience UX (Silent Guardian, Offline Assurance, Contextual Diagnostics).
