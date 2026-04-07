@@ -32,12 +32,14 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bluetooth
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Usb
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -46,41 +48,42 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.platform.LocalContext
-import com.yotech.valtprinter.core.util.AlarmHelper
-import com.yotech.valtprinter.data.local.entity.PrintJobEntity
-
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.TextUnit
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.yotech.valtprinter.core.util.AlarmHelper
+import com.yotech.valtprinter.data.local.entity.PrintJobEntity
 import com.yotech.valtprinter.domain.model.ConnectionType
 import com.yotech.valtprinter.domain.model.PrinterDevice
 import com.yotech.valtprinter.domain.model.PrinterState
+import com.yotech.valtprinter.ui.component.StatusPill
 import com.yotech.valtprinter.ui.theme.CyanElectric
 import com.yotech.valtprinter.ui.theme.NavySurface
 import com.yotech.valtprinter.ui.theme.VioletElectric
 import com.yotech.valtprinter.ui.viewmodel.PrinterViewModel
-import com.yotech.valtprinter.ui.component.StatusPill
-import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
+import kotlinx.coroutines.delay
 
 @Composable
 fun PrinterScreen(
@@ -124,7 +127,7 @@ fun PrinterScreen(
                     fontWeight = FontWeight.ExtraBold,
                     color = MaterialTheme.colorScheme.onBackground
                 )
-                val subtitle = when(state) {
+                val subtitle = when (state) {
                     is PrinterState.Scanning -> "Searching for nearby devices..."
                     is PrinterState.Connected -> "Hardware Online"
                     is PrinterState.Error -> "Connection Interrupted"
@@ -137,38 +140,50 @@ fun PrinterScreen(
                 )
             }
 
-        Spacer(modifier = Modifier.height(24.dp))
+            var showHandshakeSuccess by remember { mutableStateOf(false) }
 
-        AnimatedContent(targetState = state, label = "PrinterState") { currentState ->
-            when (currentState) {
-                is PrinterState.Idle -> IdleStateView(
-                    onScan = viewModel::startDiscovery
-                )
-
-                is PrinterState.AutoConnecting -> AutoConnectingView()
-                is PrinterState.Scanning -> ScanningStateView(
-                    devices = devices,
-                    onDeviceSelected = viewModel::connectToDevice,
-                    onStopScan = viewModel::stopDiscovery
-                )
-
-                is PrinterState.Connecting -> ConnectingStateView(
-                    deviceName = currentState.deviceName
-                )
-
-                else -> {
-                    // Contextual Hardware Dashboard (Morphs between Connected, Reconnecting, and Error)
-                    HardwareDashboard(
-                        state = currentState,
-                        recentJobs = recentJobs,
-                        onPreviewClick = onNavigateToPreview,
-                        onDisconnect = viewModel::disconnect,
-                        onRetry = viewModel::reconnect,
-                        onScanOthers = viewModel::startDiscovery
-                    )
+            // Elite: Handshake Success Animation Trigger
+            LaunchedEffect(state) {
+                if (state is PrinterState.Connected) {
+                    showHandshakeSuccess = true
+                    delay(1200)
+                    showHandshakeSuccess = false
                 }
             }
-        } // End AnimatedContent
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            AnimatedContent(targetState = state, label = "PrinterState") { currentState ->
+                when (currentState) {
+                    is PrinterState.Idle -> IdleStateView(
+                        onScan = viewModel::startDiscovery
+                    )
+
+                    is PrinterState.AutoConnecting -> AutoConnectingView()
+                    is PrinterState.Scanning -> ScanningStateView(
+                        devices = devices,
+                        onDeviceSelected = viewModel::connectToDevice,
+                        onStopScan = viewModel::stopDiscovery
+                    )
+
+                    is PrinterState.Connecting -> ConnectingStateView(
+                        deviceName = currentState.deviceName
+                    )
+
+                    else -> {
+                        // Contextual Hardware Dashboard (Morphs between Connected, Reconnecting, and Error)
+                        HardwareDashboard(
+                            state = currentState,
+                            recentJobs = recentJobs,
+                            showHandshakeSuccess = showHandshakeSuccess,
+                            onPreviewClick = onNavigateToPreview,
+                            onDisconnect = viewModel::disconnect,
+                            onRetry = viewModel::reconnect,
+                            onScanOthers = viewModel::startDiscovery
+                        )
+                    }
+                }
+            } // End AnimatedContent
         } // End Column
 
         // Top-level Box layer: ALARM OVERLAY
@@ -218,7 +233,11 @@ fun ScanningStateView(
     onStopScan: () -> Unit
 ) {
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxSize()) {
-        Box(modifier = Modifier.fillMaxWidth().height(4.dp)) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(4.dp)
+        ) {
             LinearProgressIndicator(
                 modifier = Modifier.fillMaxWidth(),
                 color = CyanElectric,
@@ -244,13 +263,14 @@ fun ScanningStateView(
 
 @Composable
 fun ConnectingStateView(deviceName: String) {
-        Text("Connecting to $deviceName...", style = MaterialTheme.typography.titleMedium)
-    }
+    Text("Connecting to $deviceName...", style = MaterialTheme.typography.titleMedium)
+}
 
 @Composable
 fun HardwareDashboard(
     state: PrinterState,
     recentJobs: List<PrintJobEntity>,
+    showHandshakeSuccess: Boolean,
     onPreviewClick: () -> Unit,
     onDisconnect: () -> Unit,
     onRetry: () -> Unit,
@@ -300,12 +320,15 @@ fun HardwareDashboard(
                         drawRoundRect(
                             color = borderColor.copy(alpha = auraAlpha * 0.3f),
                             cornerRadius = CornerRadius(24.dp.toPx(), 24.dp.toPx()),
-                            size = size.copy(width = size.width + 12.dp.toPx(), height = size.height + 12.dp.toPx()),
+                            size = size.copy(
+                                width = size.width + 12.dp.toPx(),
+                                height = size.height + 12.dp.toPx()
+                            ),
                             topLeft = Offset(-6.dp.toPx(), -6.dp.toPx())
                         )
                     }
                 },
-            border = if (state !is PrinterState.Connected) 
+            border = if (state !is PrinterState.Connected)
                 BorderStroke(2.dp, borderColor.copy(alpha = auraAlpha)) else null
         ) {
             Column(
@@ -338,15 +361,33 @@ fun HardwareDashboard(
                             .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(
-                            imageVector = when (state) {
-                                is PrinterState.Error -> Icons.Default.LinkOff
-                                else -> Icons.Default.Print
-                            },
-                            contentDescription = null,
-                            modifier = Modifier.size(32.dp),
-                            tint = iconColor
-                        )
+                        // Handshake Success Overlay
+                        if (showHandshakeSuccess) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = "Success",
+                                modifier = Modifier.size(40.dp),
+                                tint = Color.Green
+                            )
+                        } else {
+                            Icon(
+                                imageVector = when (state) {
+                                    is PrinterState.Error -> Icons.Default.LinkOff
+                                    else -> when (state) {
+                                        is PrinterState.Connected -> when (state.device.connectionType) {
+                                            ConnectionType.USB -> Icons.Default.Usb
+                                            ConnectionType.BLUETOOTH -> Icons.Default.Bluetooth
+                                            ConnectionType.LAN -> Icons.Default.Wifi
+                                        }
+
+                                        else -> Icons.Default.Print
+                                    }
+                                },
+                                contentDescription = null,
+                                modifier = Modifier.size(32.dp),
+                                tint = iconColor
+                            )
+                        }
                     }
                 }
 
@@ -361,7 +402,7 @@ fun HardwareDashboard(
                     is PrinterState.Reconnecting -> state.deviceName
                     else -> "Connection Lost"
                 }
-                
+
                 Text(
                     text = name,
                     style = MaterialTheme.typography.headlineSmall,
@@ -373,16 +414,34 @@ fun HardwareDashboard(
                     when (s) {
                         is PrinterState.Reconnecting -> {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text(s.microState, color = CyanElectric, fontWeight = FontWeight.Bold)
-                                Text("Recovery active...", style = MaterialTheme.typography.labelSmall)
+                                Text(
+                                    s.microState,
+                                    color = CyanElectric,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    "Recovery active...",
+                                    style = MaterialTheme.typography.labelSmall
+                                )
                             }
                         }
+
                         is PrinterState.Error -> {
-                            Text("Hardware Fault Detected", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                            Text(
+                                "Hardware Fault Detected",
+                                color = MaterialTheme.colorScheme.error,
+                                fontWeight = FontWeight.Bold
+                            )
                         }
+
                         is PrinterState.Connected -> {
-                            Text(s.device.address, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
+                            Text(
+                                s.device.address,
+                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                style = MaterialTheme.typography.bodySmall
+                            )
                         }
+
                         else -> {}
                     }
                 }
@@ -412,7 +471,11 @@ fun HardwareDashboard(
         // Action Area
         Column(modifier = Modifier.weight(1f)) {
             if (recentJobs.isNotEmpty() && state is PrinterState.Connected) {
-                Text("Recent Activity", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(bottom = 8.dp))
+                Text(
+                    "Recent Activity",
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
                 LazyColumn(modifier = Modifier.fillMaxWidth()) {
                     items(recentJobs, key = { it.id }) { job ->
                         ListItem(
@@ -420,12 +483,21 @@ fun HardwareDashboard(
                             supportingContent = { Text("Status: ${job.status}") },
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                         )
-                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
+                        HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)
+                        )
                     }
                 }
             } else if (state is PrinterState.Error) {
                 // Diagnostic Card
-                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.1f))) {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer.copy(
+                            alpha = 0.1f
+                        )
+                    )
+                ) {
                     Text(
                         state.diagnosticMessage,
                         Modifier.padding(16.dp),
@@ -442,7 +514,9 @@ fun HardwareDashboard(
             if (state is PrinterState.Connected) {
                 Button(
                     onClick = onPreviewClick,
-                    modifier = Modifier.fillMaxWidth().height(60.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(60.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = CyanElectric)
                 ) {
                     Icon(Icons.Default.Print, contentDescription = null, tint = NavySurface)
@@ -451,19 +525,34 @@ fun HardwareDashboard(
                 }
                 Spacer(Modifier.height(12.dp))
                 OutlinedButton(
-                    onClick = onDisconnect,
-                    modifier = Modifier.fillMaxWidth().height(50.dp),
+                    onClick = {
+                        // Elite: Manual disconnect resets everything
+                        onDisconnect()
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp),
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.error)
                 ) {
-                    Icon(Icons.Default.LinkOff, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                    Icon(
+                        Icons.Default.LinkOff,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error
+                    )
                     Spacer(Modifier.width(8.dp))
                     Text("DISCONNECT PRINTER", color = MaterialTheme.colorScheme.error)
                 }
-            } else if (state is PrinterState.Reconnecting) {
+            } else if (state is PrinterState.Reconnecting || state is PrinterState.Error) {
+                // Elite Adaptive Button for Downtime
                 Button(
-                    onClick = onRetry, // In Reconnecting state, this maps to stop
-                    modifier = Modifier.fillMaxWidth().height(60.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(alpha = 0.8f))
+                    onClick = {
+                        // Stop recovery loop and go to manual scan
+                        onDisconnect()
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(60.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(alpha = 0.9f))
                 ) {
                     Icon(Icons.Default.Stop, contentDescription = null, tint = Color.White)
                     Spacer(Modifier.width(8.dp))
@@ -471,12 +560,14 @@ fun HardwareDashboard(
                 }
                 Spacer(Modifier.height(12.dp))
                 TextButton(onClick = onScanOthers, modifier = Modifier.fillMaxWidth()) {
-                    Text("CHANGE PRINTER")
+                    Text(if (state is PrinterState.Error) "SCAN FOR OTHERS" else "CHANGE PRINTER")
                 }
             } else {
                 Button(
                     onClick = onRetry,
-                    modifier = Modifier.fillMaxWidth().height(60.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(60.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = CyanElectric)
                 ) {
                     Icon(Icons.Default.Refresh, contentDescription = null, tint = NavySurface)
@@ -556,13 +647,25 @@ fun AlarmOverlay(isAcknowledged: Boolean, onAcknowledge: () -> Unit) {
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
         ) {
             Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(Icons.Default.Warning, contentDescription = null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.error)
+                Icon(
+                    Icons.Default.Warning,
+                    contentDescription = null,
+                    modifier = Modifier.size(64.dp),
+                    tint = MaterialTheme.colorScheme.error
+                )
                 Spacer(Modifier.height(16.dp))
-                Text("HARDWARE FAULT", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onErrorContainer)
+                Text(
+                    "HARDWARE FAULT",
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = MaterialTheme.colorScheme.onErrorContainer
+                )
                 Spacer(Modifier.height(8.dp))
-                Text("Printer is out of paper, overheated, or cover is open.\nAll transactions are paused until resolved.", textAlign = TextAlign.Center)
+                Text(
+                    "Printer is out of paper, overheated, or cover is open.\nAll transactions are paused until resolved.",
+                    textAlign = TextAlign.Center
+                )
                 Spacer(Modifier.height(24.dp))
-                
+
                 if (!isAcknowledged) {
                     Button(
                         onClick = onAcknowledge,
@@ -571,7 +674,11 @@ fun AlarmOverlay(isAcknowledged: Boolean, onAcknowledge: () -> Unit) {
                         Text("ACKNOWLEDGE & SILENCE ALARM")
                     }
                 } else {
-                    Text("Alarm silenced. Please physically fix the printer. The system will resume automatically.", color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+                    Text(
+                        "Alarm silenced. Please physically fix the printer. The system will resume automatically.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
                 }
             }
         }

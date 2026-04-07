@@ -27,14 +27,17 @@ fun StatusPill(
 ) {
     val text = when (state) {
         is PrinterState.Connected -> "Connected"
-        is PrinterState.Reconnecting -> "Recovering: ${state.secondsRemaining}s"
+        is PrinterState.Reconnecting -> {
+            val attempt = (60 - state.secondsRemaining) / 2 + 1
+            "Recovering (Attempt $attempt): ${state.secondsRemaining}s"
+        }
         is PrinterState.Connecting -> "Connecting..."
         is PrinterState.Scanning -> "Scanning..."
         is PrinterState.Error -> "Offline"
         else -> "Idle"
     }
 
-    val targetColor = when (state) {
+    val targetStatusColor = when (state) {
         is PrinterState.Connected -> Color.Green
         is PrinterState.Reconnecting -> Color(0xFFFFA500)
         is PrinterState.Connecting -> Color.Cyan
@@ -44,21 +47,31 @@ fun StatusPill(
     }
 
     val animatedColor by animateColorAsState(
-        targetValue = targetColor,
+        targetValue = targetStatusColor,
         animationSpec = tween(durationMillis = 500),
         label = "PillColor"
     )
 
-    // Pulsing effect for non-stable states
+    // Pulsing effect for non-stable states (Elite Vitality)
     val infiniteTransition = rememberInfiniteTransition(label = "PillPulse")
     val alpha by infiniteTransition.animateFloat(
         initialValue = 1f,
-        targetValue = if (state is PrinterState.Connected || state is PrinterState.Idle) 1f else 0.3f,
+        targetValue = if (state is PrinterState.Connected || state is PrinterState.Idle) 1f else 0.4f,
         animationSpec = infiniteRepeatable(
-            animation = tween(1000, easing = LinearEasing),
+            animation = tween(1200, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "AlphaPulse"
+    )
+
+    val glowScale by infiniteTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = if (state is PrinterState.Reconnecting) 1.2f else 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1200, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "GlowScale"
     )
 
     Column(
@@ -69,12 +82,12 @@ fun StatusPill(
             modifier = Modifier
                 .clip(RoundedCornerShape(100.dp))
                 .background(animatedColor.copy(alpha = 0.15f))
-                // Elite Neon Glow Effect
+                // Elite Vitality Glow
                 .drawBehind {
-                    if (state !is PrinterState.Idle) {
+                    if (state is PrinterState.Reconnecting || state is PrinterState.Connected) {
                         drawCircle(
-                            color = animatedColor.copy(alpha = alpha * 0.2f),
-                            radius = size.maxDimension * 0.8f
+                            color = animatedColor.copy(alpha = (alpha * 0.15f)),
+                            radius = (size.maxDimension * 0.7f) * glowScale
                         )
                     }
                 }
@@ -94,23 +107,22 @@ fun StatusPill(
                 style = MaterialTheme.typography.labelLarge.copy(
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 1.2.sp,
-                    fontSize = 11.sp
+                    fontSize = 10.sp
                 ),
                 color = animatedColor
             )
         }
         
-        // Internal Micro-Progress for Reconnecting state
         if (state is PrinterState.Reconnecting) {
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(8.dp))
             LinearProgressIndicator(
                 progress = { state.secondsRemaining / 60f },
                 modifier = Modifier
-                    .width(80.dp)
+                    .width(100.dp)
                     .height(2.dp)
                     .clip(RoundedCornerShape(100.dp)),
                 color = animatedColor,
-                trackColor = animatedColor.copy(alpha = 0.05f)
+                trackColor = animatedColor.copy(alpha = 0.1f)
             )
         }
     }
