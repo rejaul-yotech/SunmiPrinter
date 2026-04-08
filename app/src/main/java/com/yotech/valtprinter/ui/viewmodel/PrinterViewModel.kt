@@ -137,6 +137,14 @@ class PrinterViewModel @Inject constructor(
         disconnectUseCase()
     }
 
+    fun rescanForOthers() {
+        viewModelScope.launch {
+            // Manual user intent: stop current session and enter stable manual scanning mode.
+            disconnectUseCase()
+            startScanUseCase()
+        }
+    }
+
     fun reconnect() {
         // Restart the automatic scan/connect flow or force check if already in progress
         startDiscovery()

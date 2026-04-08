@@ -21,6 +21,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -29,6 +30,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.yotech.valtprinter.domain.model.PrinterState
 import com.yotech.valtprinter.ui.receipt.ReceiptPreviewScreen
 import com.yotech.valtprinter.ui.viewmodel.PrinterViewModel
 import com.yotech.valtprinter.ui.theme.ValtPrinterTheme
@@ -45,6 +48,7 @@ class MainActivity : ComponentActivity() {
     private val viewModel: PrinterViewModel by viewModels()
     private var permissionsGranted by androidx.compose.runtime.mutableStateOf(false)
     private var currentScreen by mutableStateOf(AppScreen.PRINTER)
+    private var pendingReturnScreen by mutableStateOf<AppScreen?>(null)
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -76,6 +80,41 @@ class MainActivity : ComponentActivity() {
                     if (!permissionsGranted) {
                         PermissionUI { permissionLauncher.launch(getRequiredPermissions()) }
                     } else {
+                        val printerState by viewModel.printerState.collectAsStateWithLifecycle()
+
+                        // Global hardware-fault gate:
+                        // any screen (including Preview) is redirected to Printer status screen during
+                        // disconnection, then automatically returned to the originating screen on recovery.
+                        LaunchedEffect(printerState) {
+                            when (printerState) {
+                                is PrinterState.Connected -> {
+                                    val returnTo = pendingReturnScreen
+                                    if (returnTo != null) {
+                                        currentScreen = returnTo
+                                        pendingReturnScreen = null
+                                    }
+                                }
+                                is PrinterState.Error, is PrinterState.Reconnecting -> {
+                                    if (currentScreen != AppScreen.PRINTER && pendingReturnScreen == null) {
+                                        pendingReturnScreen = currentScreen
+                                    }
+                                    currentScreen = AppScreen.PRINTER
+                                }
+                                else -> {
+                                    // Deterministic gating: preview is only valid while truly connected.
+                                    if (currentScreen == AppScreen.PREVIEW) {
+                                        if (pendingReturnScreen == null) {
+                                            pendingReturnScreen = AppScreen.PREVIEW
+                                        }
+                                        currentScreen = AppScreen.PRINTER
+                                    } else if (printerState is PrinterState.Scanning || printerState is PrinterState.Idle) {
+                                        // Manual scanning/disconnect sessions should not auto-return.
+                                        pendingReturnScreen = null
+                                    }
+                                }
+                            }
+                        }
+
                         when (currentScreen) {
                             AppScreen.PRINTER -> PrinterScreen(
                                 viewModel = viewModel,

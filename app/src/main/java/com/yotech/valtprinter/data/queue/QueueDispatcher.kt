@@ -144,9 +144,25 @@ class QueueDispatcher @Inject constructor(
                     if (isFinished) {
                         // For USB/BT: commitAndCut sends the entire buffered receipt atomically.
                         // For LAN: no-op (raw socket already sent feed+cut per chunk).
-                        printerRepository.finalCut()
+                        val cutResult = printerRepository.finalCut()
+                        if (cutResult is PrintResult.Success) {
+                            // keep isFinished=true and continue to completion branch below
+                        } else {
+                            lastError = (cutResult as PrintResult.Failure).reason
+                            isFinished = false
+                        }
+                    }
+
+                    if (isFinished && lastError == null) {
                         printDao.updateStatus(nextJob.id, PrintStatus.COMPLETED)
                         callbackManager.notifySuccess(nextJob.externalJobId)
+                    } else if (isConnectivityLoss(lastError)) {
+                        // If transport/session drops (BT power-off, unplug, network break),
+                        // keep the job resumable and pause until self-healing reconnects.
+                        printDao.updateStatus(nextJob.id, PrintStatus.INTERRUPTED)
+                        NotificationHelper.updateNotification(serviceContext, "Printer offline. Waiting for auto-reconnect...", 1)
+                        wasAutoPaused = true
+                        suspendQueue()
                     } else if (lastError?.contains("Paper Out", ignoreCase = true) == true) {
                         // "Elite" Policy: On Paper-Out mid-print, mark for Full Reprint
                         printDao.updateChunkProgress(nextJob.id, 0) // Reset progress
@@ -168,6 +184,18 @@ class QueueDispatcher @Inject constructor(
 
     private suspend fun suspendQueue() {
         printerDataStore.setPrinterPaused(true)
+    }
+
+    private fun isConnectivityLoss(lastError: String?): Boolean {
+        if (lastError.isNullOrBlank()) return false
+        val lower = lastError.lowercase()
+        return lower.contains("not connected")
+                || lower.contains("printer null")
+                || lower.contains("disconnect")
+                || lower.contains("socket")
+                || lower.contains("timeout")
+                || lower.contains("commitcut error")
+                || (lower.contains("unknown") && lower.contains("commit"))
     }
 
     private fun startStateMonitoring() {

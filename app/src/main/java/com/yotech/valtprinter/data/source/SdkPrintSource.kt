@@ -24,12 +24,14 @@ class SdkPrintSource @Inject constructor() {
      * - Corrupted / duplicate content printed before the real receipt
      * - Off-sync line positioning, leading to premature paper cuts on USB/BT
      */
-    fun initBuffer(printer: CloudPrinter) {
+    fun initBuffer(printer: CloudPrinter): Boolean {
         try {
             printer.clearTransBuffer()
             Log.d("SDK_PRINT", "Buffer cleared — clean slate for new job")
+            return true
         } catch (e: Exception) {
             Log.e("SDK_PRINT", "clearTransBuffer failed: ${e.message}", e)
+            return false
         }
     }
 
@@ -124,7 +126,9 @@ class SdkPrintSource @Inject constructor() {
             try {
                 // Single-shot print: init buffer first to guarantee a clean slate,
                 // then buffer the image and commit+cut in one atomic operation.
-                initBuffer(printer)
+                if (!initBuffer(printer)) {
+                    return PrintResult.Failure("Buffer init failed before commit")
+                }
                 addToBuffer(printer, bitmap)
                 commitAndCut(printer)
             } catch (e: Exception) {

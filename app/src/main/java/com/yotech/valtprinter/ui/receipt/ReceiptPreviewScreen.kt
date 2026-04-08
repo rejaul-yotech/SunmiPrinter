@@ -1,6 +1,5 @@
 package com.yotech.valtprinter.ui.receipt
 
-import android.graphics.Bitmap
 import android.widget.Toast
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -38,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yotech.valtprinter.core.util.BitmapRenderer
 import com.yotech.valtprinter.domain.model.PrintStatus
+import com.yotech.valtprinter.domain.model.PrinterState
 import com.yotech.valtprinter.domain.model.orderdata.BillingData
 import com.yotech.valtprinter.domain.model.orderdata.OrderItem
 import com.yotech.valtprinter.domain.model.orderdata.SubOrderItem
@@ -59,6 +59,7 @@ fun ReceiptPreviewScreen(
     val printStatus by viewModel.printStatus.collectAsStateWithLifecycle(
         initialValue = PrintStatus.Idle
     )
+    val printerState by viewModel.printerState.collectAsStateWithLifecycle()
 
     // Reset status when entering the screen to ensure fresh state
     LaunchedEffect(Unit) {
@@ -203,14 +204,15 @@ fun ReceiptPreviewScreen(
             // Determine UI state based on the Single Source of Truth
             val isLoading =
                 printStatus is PrintStatus.Processing || printStatus is PrintStatus.Sending
+            val isConnected = printerState is PrinterState.Connected
             val isEnabled =
-                printStatus is PrintStatus.Idle || printStatus is PrintStatus.Failure || printStatus is PrintStatus.Success
+                (printStatus is PrintStatus.Idle || printStatus is PrintStatus.Failure || printStatus is PrintStatus.Success) && isConnected
 
             Button(
                 onClick = {
                     scope.launch {
                         // 1. Capture the layout (Processing state is handled in VM)
-                        val bitmap: Bitmap = BitmapRenderer.renderComposableToBitmap(view) {
+                        val bitmap = BitmapRenderer.renderComposableToBitmap(view) {
                             PosPrintingScreen(data = billingData, isScrollEnabled = false)
                         }
                         // 2. Clear out any previous success state before starting fresh

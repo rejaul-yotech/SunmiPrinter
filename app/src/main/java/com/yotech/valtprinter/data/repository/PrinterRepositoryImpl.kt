@@ -34,6 +34,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.coroutines.resume
+import kotlinx.coroutines.suspendCancellableCoroutine
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -44,6 +47,12 @@ class PrinterRepositoryImpl @Inject constructor(
     private val rawSocketPrintSource: RawSocketPrintSource,
     private val feedbackManager: FeedbackManager
 ) : PrinterRepository {
+    private enum class RecoveryReason {
+        SDK_DISCONNECT,
+        HEARTBEAT_LOSS,
+        PRINT_TRANSPORT_LOSS,
+        ACTIVE_PRINTER_MISSING
+    }
 
     private val printMutex = Mutex()
     private var activeCloudPrinter: CloudPrinter? = null
@@ -64,6 +73,11 @@ class PrinterRepositoryImpl @Inject constructor(
 
     // Real-time Vitality: Heartbeat
     private var heartbeatJob: Job? = null
+    private var btConsecutiveMisses = 0
+    private var lastSuccessfulPrintCommitMs = 0L
+    private var lastRecoveryRequestMs = 0L
+    private var activeRecoveryDeviceId: String? = null
+    private var recoverySessionId = 0L
 
     // Private map to hold the internal SDK objects indexed by unique domain ID
     private val internalPrintersMap = mutableMapOf<String, DiscoveredPrinter>()
@@ -81,6 +95,11 @@ class PrinterRepositoryImpl @Inject constructor(
     private val searchMethods = listOf(1000, 2000, 3000)
 
     override fun startScan() {
+        // Manual scan should take control and stop auto-recovery loop.
+        reconnectionJob?.cancel()
+        isRecovering = false
+        activeRecoveryDeviceId = null
+        btConsecutiveMisses = 0
         _printerState.value = PrinterState.Scanning
         stopAllSearches()
         internalPrintersMap.clear()
@@ -114,15 +133,15 @@ class PrinterRepositoryImpl @Inject constructor(
             DiscoveryMode.LAN -> "LAN-${info.address}"
         }
 
-        if (!internalPrintersMap.containsKey(uniqueId)) {
-            val discovered = DiscoveredPrinter(printer, mode, uniqueId)
-            internalPrintersMap[uniqueId] = discovered
+        // Always refresh with the latest SDK instance. Reusing stale CloudPrinter objects
+        // after reconnect can cause transaction failures (e.g., CommitCut UNKNOWN).
+        val discovered = DiscoveredPrinter(printer, mode, uniqueId)
+        internalPrintersMap[uniqueId] = discovered
 
-            // Map to domain object and update state flow
-            val domainList = internalPrintersMap.values.map { it.toDomain() }
-            _discoveredDevices.value = domainList
-            Log.d("PRINTER_DEBUG", "Found $mode Device: $uniqueId | IP: ${info.address}")
-        }
+        // Map to domain object and update state flow
+        val domainList = internalPrintersMap.values.map { it.toDomain() }
+        _discoveredDevices.value = domainList
+        Log.d("PRINTER_DEBUG", "Found/Updated $mode Device: $uniqueId | IP: ${info.address}")
     }
 
     override suspend fun connect(device: PrinterDevice) {
@@ -152,8 +171,11 @@ class PrinterRepositoryImpl @Inject constructor(
                 }
                 isConnecting = false
                 isRecovering = false
+                activeRecoveryDeviceId = null
+                btConsecutiveMisses = 0
                 activeCloudPrinter = cloudPrinter
                 connectedDevice = device
+                lastConnectedDevice = device
                 try {
                     cloudPrinter.setEncodeMode(EncodeType.UTF_8)
                 } catch (e: Exception) {
@@ -190,13 +212,18 @@ class PrinterRepositoryImpl @Inject constructor(
                 }
                 stopHeartbeat()
                 activeCloudPrinter = null
+                btConsecutiveMisses = 0
                 val lastDev = connectedDevice ?: device
                 connectedDevice = null
 
                 if (!isManualDisconnect) {
                     Log.w("PRINTER_DEBUG", "Unexpected Disconnect! Triggering Self-Healing...")
                     feedbackManager.emitGracefulWarning()
-                    triggerAutoReconnection(lastDev)
+                    requestRecovery(
+                        device = lastDev,
+                        reason = RecoveryReason.SDK_DISCONNECT,
+                        details = "SDK onDisConnect callback"
+                    )
                 } else {
                     _printerState.value = PrinterState.Idle
                 }
@@ -209,13 +236,48 @@ class PrinterRepositoryImpl @Inject constructor(
      * Instead of timing out, this logic enters an infinite "Resilience Loop"
      * that scales from aggressive polling (2s) to battery-efficient polling (15s).
      */
-    private fun triggerAutoReconnection(device: PrinterDevice) {
+    private fun requestRecovery(device: PrinterDevice, reason: RecoveryReason, details: String) {
+        if (isManualDisconnect) return
+        val now = System.currentTimeMillis()
+        val sameDevice = activeRecoveryDeviceId == device.id
+        if (isRecovering && sameDevice) {
+            Log.d("RESILIENCE_HUB", "Recovery already active for ${device.id}. Ignoring duplicate trigger: $reason ($details)")
+            return
+        }
+        val cooldownMs = 1200L
+        if (now - lastRecoveryRequestMs < cooldownMs && sameDevice) {
+            Log.d("RESILIENCE_HUB", "Recovery trigger suppressed by cooldown: $reason ($details)")
+            return
+        }
+        lastRecoveryRequestMs = now
+        recoverySessionId += 1
+        triggerAutoReconnection(device, reason, details, recoverySessionId)
+    }
+
+    private fun triggerAutoReconnection(
+        device: PrinterDevice,
+        reason: RecoveryReason,
+        details: String,
+        sessionId: Long
+    ) {
         reconnectionJob?.cancel()
         isRecovering = true
+        activeRecoveryDeviceId = device.id
+        btConsecutiveMisses = 0
+        // Force close any stale SDK session before searching/rebinding.
+        // This reduces stale sockets and repeated OS-level re-pair prompts.
+        try {
+            activeCloudPrinter?.release(context)
+        } catch (e: Exception) {
+            Log.w("RESILIENCE_HUB", "Release before recovery failed: ${e.message}")
+        }
+        activeCloudPrinter = null
+        connectedDevice = null
         reconnectionJob = repositoryScope.launch {
             lastConnectedDevice = device
             var attempts = 0
             val aggressiveLimit = 30 // First 60 seconds (30 attempts * 2s)
+            Log.i("RESILIENCE_HUB", "Recovery session $sessionId started. reason=$reason details=$details device=${device.id}")
 
             while (isActive) {
                 attempts++
@@ -236,7 +298,7 @@ class PrinterRepositoryImpl @Inject constructor(
 
                 _printerState.value = PrinterState.Reconnecting(device.name, (delayMs/1000).toInt(), microState)
 
-                Log.d("RESILIENCE_HUB", "Attempt #$attempts | Next check in ${delayMs / 1000}s")
+                Log.d("RESILIENCE_HUB", "Session $sessionId | Attempt #$attempts | Next check in ${delayMs / 1000}s")
 
                 // Tactical reminders: vibration only, no intrusive tones during background search
                 if (attempts == 1 || (attempts > aggressiveLimit && attempts % 15 == 0)) {
@@ -292,6 +354,9 @@ class PrinterRepositoryImpl @Inject constructor(
 
                 delay(delayMs)
             }
+            if (!isActive) {
+                Log.d("RESILIENCE_HUB", "Recovery session $sessionId cancelled.")
+            }
         }
     }
 
@@ -344,15 +409,34 @@ class PrinterRepositoryImpl @Inject constructor(
         val device = connectedDevice
 
         if (printer == null || device == null) {
+            lastConnectedDevice?.let {
+                if (!isRecovering) {
+                    Log.w("PRINTER_DEBUG", "printChunk detected missing active connection. Triggering recovery.")
+                    requestRecovery(
+                        device = it,
+                        reason = RecoveryReason.ACTIVE_PRINTER_MISSING,
+                        details = "printChunk called with null activeCloudPrinter/device"
+                    )
+                }
+            }
             return PrintResult.Failure("Not connected to any printer.")
         }
 
         return printMutex.withLock {
-            if (device.connectionType == ConnectionType.LAN && device.address.isNotEmpty()) {
+            val result = if (device.connectionType == ConnectionType.LAN && device.address.isNotEmpty()) {
                 rawSocketPrintSource.printBitmap(device.address, device.port, bitmap)
             } else {
                 sdkPrintSource.printBitmapChunk(printer, bitmap, isLastChunk)
             }
+            if (result is PrintResult.Failure && isTransportLoss(result.reason) && !isRecovering) {
+                Log.w("PRINTER_DEBUG", "printChunk transport loss: ${result.reason}. Triggering recovery.")
+                requestRecovery(
+                    device = device,
+                    reason = RecoveryReason.PRINT_TRANSPORT_LOSS,
+                    details = result.reason
+                )
+            }
+            result
         }
     }
 
@@ -373,7 +457,12 @@ class PrinterRepositoryImpl @Inject constructor(
         // We suspend until the printer confirms receipt, guaranteeing the cut happens only
         // AFTER the printer has physically processed all buffered image data.
         Log.d("PRINTER_DEBUG", "finalCut: USB/BT path — committing buffer and cutting.")
-        return sdkPrintSource.commitAndCut(printer)
+        val result = sdkPrintSource.commitAndCut(printer)
+        if (result is PrintResult.Success) {
+            lastSuccessfulPrintCommitMs = System.currentTimeMillis()
+            btConsecutiveMisses = 0
+        }
+        return result
     }
 
     override suspend fun initPrintJob(): PrintResult {
@@ -387,8 +476,11 @@ class PrinterRepositoryImpl @Inject constructor(
 
         // USB/BT: clear the SDK's internal command buffer before the first chunk.
         // This ensures no stale content from a previous incomplete job is committed.
-        sdkPrintSource.initBuffer(printer)
-        return PrintResult.Success
+        return if (sdkPrintSource.initBuffer(printer)) {
+            PrintResult.Success
+        } else {
+            PrintResult.Failure("Buffer init failed")
+        }
     }
 
     override suspend fun printReceipt(bitmap: Bitmap): PrintResult {
@@ -421,7 +513,11 @@ class PrinterRepositoryImpl @Inject constructor(
                     Log.w("VITALITY", "Heartbeat lost for ${device.name}")
                     withContext(Dispatchers.Main) {
                         feedbackManager.emitGracefulWarning() // Haptic Pulse
-                        triggerAutoReconnection(device)
+                        requestRecovery(
+                            device = device,
+                            reason = RecoveryReason.HEARTBEAT_LOSS,
+                            details = "Physical heartbeat probe failed"
+                        )
                     }
                     break // Stop heartbeat, enter recovery
                 }
@@ -429,7 +525,7 @@ class PrinterRepositoryImpl @Inject constructor(
         }
     }
 
-    private fun checkPhysicalConnection(device: PrinterDevice): Boolean {
+    private suspend fun checkPhysicalConnection(device: PrinterDevice): Boolean {
         return when (device.connectionType) {
             ConnectionType.USB -> {
                 val usbManager = context.getSystemService(Context.USB_SERVICE) as? UsbManager
@@ -456,15 +552,95 @@ class PrinterRepositoryImpl @Inject constructor(
             }
 
             ConnectionType.BLUETOOTH -> {
-                // BT relies on OS connectivity or SDK disconnect callbacks.
-                true
+                // For BT we must actively probe visibility; SDK disconnect callbacks can be delayed.
+                probeBluetoothPresence(device)
             }
         }
+    }
+
+    /**
+     * Performs a short BT discovery probe for the currently connected device.
+     * Returns false when the device is no longer visible/offline, which triggers recovery.
+     */
+    private suspend fun probeBluetoothPresence(device: PrinterDevice): Boolean {
+        // Avoid probe-induced false negatives while a print transaction is active.
+        if (printMutex.isLocked) return true
+
+        val now = System.currentTimeMillis()
+        // Guard window after SDK commit/cut: BT stack may briefly stop discovery responses
+        // despite the link still being healthy.
+        val postCommitGraceMs = 8_000L
+        if (now - lastSuccessfulPrintCommitMs < postCommitGraceMs) {
+            btConsecutiveMisses = 0
+            return true
+        }
+
+        val expectedId = device.id
+        val found = withTimeoutOrNull(1400L) {
+            suspendCancellableCoroutine<Boolean> { continuation ->
+                var resolved = false
+                try {
+                    SunmiPrinterManager.getInstance().searchCloudPrinter(context, 3000) { printer ->
+                        if (resolved || continuation.isCompleted || printer == null) return@searchCloudPrinter
+                        val info = printer.cloudPrinterInfo ?: return@searchCloudPrinter
+                        val uniqueId = "BT-${info.mac}"
+                        if (uniqueId == expectedId) {
+                            resolved = true
+                            continuation.resume(true)
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e("VITALITY", "BT probe search failed: ${e.message}", e)
+                    if (!resolved && !continuation.isCompleted) {
+                        resolved = true
+                        continuation.resume(false)
+                    }
+                }
+
+                continuation.invokeOnCancellation {
+                    try {
+                        SunmiPrinterManager.getInstance().stopSearch(context, 3000)
+                    } catch (_: Exception) {
+                    }
+                }
+            }
+        } ?: false
+
+        try {
+            SunmiPrinterManager.getInstance().stopSearch(context, 3000)
+        } catch (_: Exception) {
+        }
+
+        if (found) {
+            btConsecutiveMisses = 0
+            Log.d("VITALITY", "BT heartbeat probe for ${device.name}: found=true")
+            return true
+        }
+
+        btConsecutiveMisses++
+        val hardDisconnect = btConsecutiveMisses >= 2
+        Log.w(
+            "VITALITY",
+            "BT probe miss ${btConsecutiveMisses}/2 for ${device.name} (hardDisconnect=$hardDisconnect)"
+        )
+        return !hardDisconnect
     }
 
     private fun stopHeartbeat() {
         heartbeatJob?.cancel()
         heartbeatJob = null
+    }
+
+    private fun isTransportLoss(reason: String?): Boolean {
+        if (reason.isNullOrBlank()) return false
+        val lower = reason.lowercase()
+        return lower.contains("not connected")
+                || lower.contains("disconnect")
+                || lower.contains("socket")
+                || lower.contains("timeout")
+                || lower.contains("offline")
+                || lower.contains("commitcut error")
+                || (lower.contains("unknown") && lower.contains("commit"))
     }
 
     override fun stopScan() {
@@ -478,11 +654,15 @@ class PrinterRepositoryImpl @Inject constructor(
         isManualDisconnect = true
         stopHeartbeat()
         reconnectionJob?.cancel()
+        isRecovering = false
+        activeRecoveryDeviceId = null
         stopScan()
         activeCloudPrinter?.release(context)
         activeCloudPrinter = null
         connectedDevice = null
         lastConnectedDevice = null
+        lastSuccessfulPrintCommitMs = 0L
+        btConsecutiveMisses = 0
         _printerState.value = PrinterState.Idle
         _discoveredDevices.value = emptyList()
         internalPrintersMap.clear()

@@ -186,7 +186,7 @@ fun PrinterScreen(
                             onPreviewClick = onNavigateToPreview,
                             onDisconnect = viewModel::disconnect,
                             onRetry = viewModel::reconnect,
-                            onScanOthers = viewModel::startDiscovery
+                            onScanOthers = viewModel::rescanForOthers
                         )
                     }
                 }
@@ -204,7 +204,7 @@ fun PrinterScreen(
                 isMinimized = isAlarmAcknowledged,
                 onDismiss = { viewModel.acknowledgeAlarm() },
                 onExpand = { viewModel.expandHardwareHub() },
-                onRescan = { viewModel.disconnect() } // Rescan = Back to Idle
+                onRescan = { viewModel.rescanForOthers() }
             )
         }
     } // End Box
