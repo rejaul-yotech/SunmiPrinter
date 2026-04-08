@@ -75,6 +75,9 @@ class PrinterRepositoryImpl @Inject constructor(
     private var heartbeatJob: Job? = null
     private var btConsecutiveMisses = 0
     private var lastSuccessfulPrintCommitMs = 0L
+    private var lastBtProbeMs = 0L
+    private var lastPrintActivityMs = 0L
+    private var lastBtConfirmedHitMs = 0L
     private var lastRecoveryRequestMs = 0L
     private var activeRecoveryDeviceId: String? = null
     private var recoverySessionId = 0L
@@ -173,6 +176,7 @@ class PrinterRepositoryImpl @Inject constructor(
                 isRecovering = false
                 activeRecoveryDeviceId = null
                 btConsecutiveMisses = 0
+                lastBtConfirmedHitMs = System.currentTimeMillis()
                 activeCloudPrinter = cloudPrinter
                 connectedDevice = device
                 lastConnectedDevice = device
@@ -317,6 +321,7 @@ class PrinterRepositoryImpl @Inject constructor(
         reconnectionJob = repositoryScope.launch {
             lastConnectedDevice = device
             var attempts = 0
+            var connectScheduled = false
             val aggressiveLimit = 30 // First 60 seconds (30 attempts * 2s)
             Log.i("RESILIENCE_HUB", "Recovery session $sessionId started. reason=$reason details=$details device=${device.id}")
 
@@ -367,8 +372,9 @@ class PrinterRepositoryImpl @Inject constructor(
                                     else -> "LAN-${info.address}"
                                 }
 
-                                if (uniqueId == device.id && !isConnecting) {
+                                if (uniqueId == device.id && !isConnecting && !connectScheduled) {
                                     found = true
+                                    connectScheduled = true
                                     // CRITICAL FIX: Update map with fresh instance
                                     handlePrinterFound(printer) 
                                     
@@ -464,11 +470,13 @@ class PrinterRepositoryImpl @Inject constructor(
         }
 
         return printMutex.withLock {
+            lastPrintActivityMs = System.currentTimeMillis()
             val result = if (device.connectionType == ConnectionType.LAN && device.address.isNotEmpty()) {
                 rawSocketPrintSource.printBitmap(device.address, device.port, bitmap)
             } else {
                 sdkPrintSource.printBitmapChunk(printer, bitmap, isLastChunk)
             }
+            lastPrintActivityMs = System.currentTimeMillis()
             if (result is PrintResult.Failure && isTransportLoss(result.reason) && !isRecovering) {
                 Log.w("PRINTER_DEBUG", "printChunk transport loss: ${result.reason}. Triggering recovery.")
                 requestRecovery(
@@ -501,6 +509,7 @@ class PrinterRepositoryImpl @Inject constructor(
         val result = sdkPrintSource.commitAndCut(printer)
         if (result is PrintResult.Success) {
             lastSuccessfulPrintCommitMs = System.currentTimeMillis()
+            lastPrintActivityMs = lastSuccessfulPrintCommitMs
             btConsecutiveMisses = 0
         }
         return result
@@ -593,35 +602,64 @@ class PrinterRepositoryImpl @Inject constructor(
             }
 
             ConnectionType.BLUETOOTH -> {
-                // For BT we must actively probe visibility; SDK disconnect callbacks can be delayed.
-                probeBluetoothPresence(device)
+                probeBluetoothPresenceWithConfirmation(device)
             }
         }
     }
 
-    /**
-     * Performs a short BT discovery probe for the currently connected device.
-     * Returns false when the device is no longer visible/offline, which triggers recovery.
-     */
-    private suspend fun probeBluetoothPresence(device: PrinterDevice): Boolean {
-        // Avoid probe-induced false negatives while a print transaction is active.
+    private suspend fun probeBluetoothPresenceWithConfirmation(device: PrinterDevice): Boolean {
+        // Never probe while print transaction lock is active.
         if (printMutex.isLocked) return true
 
         val now = System.currentTimeMillis()
-        // Guard window after SDK commit/cut: BT stack may briefly stop discovery responses
-        // despite the link still being healthy.
-        val postCommitGraceMs = 8_000L
-        if (now - lastSuccessfulPrintCommitMs < postCommitGraceMs) {
+        // Avoid heartbeat decisions during/just-after print pipeline activity.
+        val printActivityGraceMs = 5_000L
+        if (now - lastPrintActivityMs < printActivityGraceMs) return true
+
+        // Guard window after successful commit to avoid post-print stack turbulence.
+        val postCommitGraceMs = 6_000L
+        if (now - lastSuccessfulPrintCommitMs < postCommitGraceMs) return true
+
+        // Balanced cadence: quick enough for UX, conservative enough to avoid random flaps.
+        val minProbeIntervalMs = 3_000L
+        if (now - lastBtProbeMs < minProbeIntervalMs) return true
+        lastBtProbeMs = now
+
+        val firstHit = runBtDiscoveryProbe(device.id)
+        val confirmedHit = if (firstHit) {
+            true
+        } else {
+            // Confirmation pass to reduce false negatives from one noisy scan cycle.
+            delay(350)
+            runBtDiscoveryProbe(device.id)
+        }
+
+        if (confirmedHit) {
             btConsecutiveMisses = 0
+            lastBtConfirmedHitMs = now
+            Log.d("VITALITY", "BT heartbeat probe confirmed for ${device.name}")
             return true
         }
 
-        val expectedId = device.id
-        val found = withTimeoutOrNull(1400L) {
+        btConsecutiveMisses++
+        // High-confidence disconnect gate:
+        // - 3 consecutive confirmed miss cycles, AND
+        // - no positive hit for at least 10 seconds.
+        val staleForMs = now - lastBtConfirmedHitMs
+        val hardDisconnect = btConsecutiveMisses >= 3 && staleForMs >= 10_000L
+        Log.w(
+            "VITALITY",
+            "BT probe miss ${btConsecutiveMisses}/3 for ${device.name} (staleForMs=$staleForMs hardDisconnect=$hardDisconnect)"
+        )
+        return !hardDisconnect
+    }
+
+    private suspend fun runBtDiscoveryProbe(expectedId: String): Boolean {
+        val found = withTimeoutOrNull(800L) {
             suspendCancellableCoroutine<Boolean> { continuation ->
                 var resolved = false
                 try {
-                    SunmiPrinterManager.getInstance().searchCloudPrinter(context, 3000) { printer ->
+                    SunmiPrinterManager.getInstance().searchCloudPrinter(context, SearchMethod.BT) { printer ->
                         if (resolved || continuation.isCompleted || printer == null) return@searchCloudPrinter
                         val info = printer.cloudPrinterInfo ?: return@searchCloudPrinter
                         val uniqueId = "BT-${info.mac}"
@@ -640,7 +678,7 @@ class PrinterRepositoryImpl @Inject constructor(
 
                 continuation.invokeOnCancellation {
                     try {
-                        SunmiPrinterManager.getInstance().stopSearch(context, 3000)
+                        SunmiPrinterManager.getInstance().stopSearch(context, SearchMethod.BT)
                     } catch (_: Exception) {
                     }
                 }
@@ -648,23 +686,10 @@ class PrinterRepositoryImpl @Inject constructor(
         } ?: false
 
         try {
-            SunmiPrinterManager.getInstance().stopSearch(context, 3000)
+            SunmiPrinterManager.getInstance().stopSearch(context, SearchMethod.BT)
         } catch (_: Exception) {
         }
-
-        if (found) {
-            btConsecutiveMisses = 0
-            Log.d("VITALITY", "BT heartbeat probe for ${device.name}: found=true")
-            return true
-        }
-
-        btConsecutiveMisses++
-        val hardDisconnect = btConsecutiveMisses >= 2
-        Log.w(
-            "VITALITY",
-            "BT probe miss ${btConsecutiveMisses}/2 for ${device.name} (hardDisconnect=$hardDisconnect)"
-        )
-        return !hardDisconnect
+        return found
     }
 
     private fun stopHeartbeat() {
@@ -703,6 +728,9 @@ class PrinterRepositoryImpl @Inject constructor(
         connectedDevice = null
         lastConnectedDevice = null
         lastSuccessfulPrintCommitMs = 0L
+        lastBtProbeMs = 0L
+        lastPrintActivityMs = 0L
+        lastBtConfirmedHitMs = 0L
         btConsecutiveMisses = 0
         _printerState.value = PrinterState.Idle
         _discoveredDevices.value = emptyList()
