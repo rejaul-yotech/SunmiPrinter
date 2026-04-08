@@ -23,6 +23,7 @@ fun DiscoveredPrinter.toDomain(): PrinterDevice {
             DiscoveryMode.USB -> ConnectionType.USB
             DiscoveryMode.LAN -> ConnectionType.LAN
             DiscoveryMode.BLUETOOTH -> ConnectionType.BLUETOOTH
-        }
+        },
+        model = null
     )
 }

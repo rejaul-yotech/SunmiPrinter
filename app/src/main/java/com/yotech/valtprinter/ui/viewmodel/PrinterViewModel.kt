@@ -3,7 +3,9 @@ package com.yotech.valtprinter.ui.viewmodel
 import android.graphics.Bitmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.yotech.valtprinter.data.local.dao.PairedDeviceDao
 import com.yotech.valtprinter.data.local.dao.PrintDao
+import com.yotech.valtprinter.data.local.entity.PairedDeviceEntity
 import com.yotech.valtprinter.data.local.datastore.PrinterDataStore
 import com.yotech.valtprinter.domain.model.PrintResult
 import com.yotech.valtprinter.domain.model.PrintStatus
@@ -41,6 +43,7 @@ class PrinterViewModel @Inject constructor(
     private val printReceiptUseCase: PrintReceiptUseCase,
     private val repository: PrinterRepository,
     private val printDao: PrintDao,
+    private val pairedDeviceDao: PairedDeviceDao,
     private val printerDataStore: PrinterDataStore
 ) : ViewModel() {
 
@@ -56,6 +59,9 @@ class PrinterViewModel @Inject constructor(
     val recentPrintJobs: StateFlow<List<com.yotech.valtprinter.data.local.entity.PrintJobEntity>> =
         printDao.getRecentJobsFlow()
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val pairedDevices: StateFlow<List<PairedDeviceEntity>> = pairedDeviceDao.getAllFlow()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val isHardwareFault: StateFlow<Boolean> = printerState
         .map { it is PrinterState.Error || it is PrinterState.Reconnecting }
@@ -76,6 +82,23 @@ class PrinterViewModel @Inject constructor(
             isHardwareFault.collect { fault ->
                 if (fault) {
                     _isAlarmAcknowledged.value = false
+                }
+            }
+        }
+
+        viewModelScope.launch {
+            printerState.collect { state ->
+                if (state is PrinterState.Connected) {
+                    pairedDeviceDao.upsert(
+                        PairedDeviceEntity(
+                            id = state.device.id,
+                            name = state.device.name,
+                            address = state.device.address,
+                            connectionType = state.device.connectionType.name,
+                            model = state.device.model,
+                            lastSeenAt = System.currentTimeMillis()
+                        )
+                    )
                 }
             }
         }
@@ -109,6 +132,32 @@ class PrinterViewModel @Inject constructor(
     fun connectToDevice(device: PrinterDevice) {
         viewModelScope.launch {
             connectUseCase(device)
+        }
+    }
+
+    fun connectToPairedDevice(device: PairedDeviceEntity) {
+        viewModelScope.launch {
+            val domainDevice = PrinterDevice(
+                id = device.id,
+                name = device.name,
+                address = device.address,
+                port = if (device.connectionType == "LAN") 9100 else 0,
+                connectionType = runCatching {
+                    com.yotech.valtprinter.domain.model.ConnectionType.valueOf(device.connectionType)
+                }.getOrDefault(com.yotech.valtprinter.domain.model.ConnectionType.BLUETOOTH),
+                model = device.model
+            )
+            val connected = repository.connectPairedDevice(domainDevice)
+            if (!connected) {
+                _printStatus.tryEmit(PrintStatus.Failure("Paired device not found nearby. Please scan again."))
+                startDiscovery()
+            }
+        }
+    }
+
+    fun unpairDevice(id: String) {
+        viewModelScope.launch {
+            pairedDeviceDao.deleteById(id)
         }
     }
 

@@ -37,6 +37,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.Print
@@ -81,6 +83,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.yotech.valtprinter.core.util.AlarmHelper
+import com.yotech.valtprinter.data.local.entity.PairedDeviceEntity
 import com.yotech.valtprinter.data.local.entity.PrintJobEntity
 import com.yotech.valtprinter.domain.model.ConnectionType
 import com.yotech.valtprinter.domain.model.PrinterDevice
@@ -95,10 +98,12 @@ import kotlinx.coroutines.delay
 @Composable
 fun PrinterScreen(
     viewModel: PrinterViewModel,
-    onNavigateToPreview: () -> Unit
+    onNavigateToPreview: () -> Unit,
+    onOpenPairedDetails: (PairedDeviceEntity) -> Unit
 ) {
     val state by viewModel.printerState.collectAsStateWithLifecycle()
     val devices by viewModel.discoveredDevices.collectAsStateWithLifecycle()
+    val pairedDevices by viewModel.pairedDevices.collectAsStateWithLifecycle()
 
     val isHardwareFault by viewModel.isHardwareFault.collectAsStateWithLifecycle()
     val isAlarmAcknowledged by viewModel.isAlarmAcknowledged.collectAsStateWithLifecycle()
@@ -168,7 +173,10 @@ fun PrinterScreen(
 
                     is PrinterState.AutoConnecting -> AutoConnectingView()
                     is PrinterState.Scanning -> ScanningStateView(
+                        pairedDevices = pairedDevices,
                         devices = devices,
+                        onPairedConnect = viewModel::connectToPairedDevice,
+                        onPairedDetails = onOpenPairedDetails,
                         onDeviceSelected = viewModel::connectToDevice,
                         onStopScan = viewModel::stopDiscovery
                     )
@@ -222,8 +230,9 @@ fun ResilienceHubOverlay(
         modifier = Modifier
             .fillMaxSize()
             .background(if (isMinimized) Color.Transparent else Color.Black.copy(alpha = 0.6f))
-            .clickable(enabled = true) { 
-                if (isMinimized) onExpand() else { /* Do nothing, click inside card handles buttons */ }
+            .clickable(enabled = true) {
+                if (isMinimized) onExpand() else { /* Do nothing, click inside card handles buttons */
+                }
             },
         contentAlignment = if (isMinimized) Alignment.BottomCenter else Alignment.Center
     ) {
@@ -291,9 +300,13 @@ fun ResilienceHubOverlay(
                         )
                         Spacer(Modifier.width(16.dp))
                         Column {
-                            val statusMsg = if (state is PrinterState.Reconnecting) state.microState else "Hardware offline"
+                            val statusMsg =
+                                if (state is PrinterState.Reconnecting) state.microState else "Hardware offline"
                             Text(statusMsg, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                            Text("System is securing existing jobs...", style = MaterialTheme.typography.labelSmall)
+                            Text(
+                                "System is securing existing jobs...",
+                                style = MaterialTheme.typography.labelSmall
+                            )
                         }
                     }
                 }
@@ -302,7 +315,9 @@ fun ResilienceHubOverlay(
                     Spacer(Modifier.height(24.dp))
                     Button(
                         onClick = onDismiss,
-                        modifier = Modifier.fillMaxWidth().height(56.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = CyanElectric),
                         shape = RoundedCornerShape(16.dp)
                     ) {
@@ -310,7 +325,10 @@ fun ResilienceHubOverlay(
                     }
                     Spacer(Modifier.height(8.dp))
                     TextButton(onClick = onRescan) {
-                         Text("RESCAN FOR OTHER PRINTERS", color = MaterialTheme.colorScheme.error.copy(alpha = 0.8f))
+                        Text(
+                            "RESCAN FOR OTHER PRINTERS",
+                            color = MaterialTheme.colorScheme.error.copy(alpha = 0.8f)
+                        )
                     }
                 }
             }
@@ -350,11 +368,18 @@ fun AutoConnectingView() {
 
 @Composable
 fun ScanningStateView(
+    pairedDevices: List<PairedDeviceEntity>,
     devices: List<PrinterDevice>,
+    onPairedConnect: (PairedDeviceEntity) -> Unit,
+    onPairedDetails: (PairedDeviceEntity) -> Unit,
     onDeviceSelected: (PrinterDevice) -> Unit,
     onStopScan: () -> Unit
 ) {
+    var showAllPaired by remember { mutableStateOf(false) }
+    val visiblePaired = if (showAllPaired) pairedDevices else pairedDevices.take(2)
+
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxSize()) {
+
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -366,17 +391,86 @@ fun ScanningStateView(
                 trackColor = Color.Transparent
             )
         }
-        RowHeader(title = "Discovered Devices", onAction = onStopScan, actionText = "Stop Scan")
+
+        if (pairedDevices.isNotEmpty()) {
+            Spacer(Modifier.height(12.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
+                Text(
+                    "Paired Devices",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = CyanElectric
+                )
+            }
+
+            Spacer(Modifier.height(12.dp))
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)
+                ),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.1f))
+            ) {
+                Column(modifier = Modifier.padding(vertical = 6.dp)) {
+                    visiblePaired.forEach { paired ->
+                        PairedDeviceItem(
+                            device = paired,
+                            onConnect = { onPairedConnect(paired) },
+                            onDetails = { onPairedDetails(paired) }
+                        )
+                        HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+                    }
+                    if (pairedDevices.size > 2) {
+                        TextButton(
+                            onClick = { showAllPaired = !showAllPaired },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(
+                                imageVector = if (showAllPaired) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                contentDescription = null
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(if (showAllPaired) "See Less" else "See More")
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "Available Devices",
+                style = MaterialTheme.typography.titleMedium,
+                color = CyanElectric
+            )
+            TextButton(onClick = onStopScan) {
+                Text("Stop Scan")
+            }
+        }
 
         if (devices.isEmpty()) {
             Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = CyanElectric)
             }
         } else {
-            LazyColumn(Modifier.weight(1f)) {
-                items(devices, key = { it.id }) { device ->
-                    DeviceListItem(device, onClick = { onDeviceSelected(device) })
-                    HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)
+                ),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.1f))
+            ) {
+                LazyColumn(Modifier.fillMaxSize()) {
+                    items(devices, key = { it.id }) { device ->
+                        DeviceListItem(device, onClick = { onDeviceSelected(device) })
+                        HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+                    }
                 }
             }
         }
@@ -384,25 +478,74 @@ fun ScanningStateView(
 }
 
 @Composable
+fun PairedDeviceItem(
+    device: PairedDeviceEntity,
+    onConnect: () -> Unit,
+    onDetails: () -> Unit
+) {
+    ListItem(
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+        leadingContent = {
+            Icon(
+                imageVector = when (device.connectionType) {
+                    "USB" -> Icons.Default.Usb
+                    "LAN" -> Icons.Default.Wifi
+                    else -> Icons.Default.Bluetooth
+                },
+                contentDescription = null,
+                tint = CyanElectric
+            )
+        },
+        headlineContent = { Text(device.name, style = MaterialTheme.typography.titleSmall) },
+        supportingContent = {
+            Text(
+                device.model ?: device.address,
+                color = MaterialTheme.colorScheme.secondary
+            )
+        },
+        trailingContent = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = onConnect) { Text("Connect") }
+                Icon(
+                    imageVector = Icons.Default.Info,
+                    contentDescription = "Device details",
+                    modifier = Modifier.clickable { onDetails() }
+                )
+            }
+        }
+    )
+}
+
+@Composable
 fun ConnectingStateView(deviceName: String) {
     val infiniteTransition = rememberInfiniteTransition(label = "Handshake")
-    
+
     val pulse1 by infiniteTransition.animateFloat(
-        initialValue = 1f, targetValue = 2.5f,
-        animationSpec = infiniteRepeatable(tween(2000, easing = LinearEasing), RepeatMode.Restart), label = "P1"
+        initialValue = 1f,
+        targetValue = 2.5f,
+        animationSpec = infiniteRepeatable(tween(2000, easing = LinearEasing), RepeatMode.Restart),
+        label = "P1"
     )
     val alpha1 by infiniteTransition.animateFloat(
-        initialValue = 0.6f, targetValue = 0f,
-        animationSpec = infiniteRepeatable(tween(2000, easing = LinearEasing), RepeatMode.Restart), label = "A1"
+        initialValue = 0.6f,
+        targetValue = 0f,
+        animationSpec = infiniteRepeatable(tween(2000, easing = LinearEasing), RepeatMode.Restart),
+        label = "A1"
     )
 
     val pulse2 by infiniteTransition.animateFloat(
         initialValue = 1f, targetValue = 2.5f,
-        animationSpec = infiniteRepeatable(tween(2000, delayMillis = 1000, easing = LinearEasing), RepeatMode.Restart), label = "P2"
+        animationSpec = infiniteRepeatable(
+            tween(2000, delayMillis = 1000, easing = LinearEasing),
+            RepeatMode.Restart
+        ), label = "P2"
     )
     val alpha2 by infiniteTransition.animateFloat(
         initialValue = 0.6f, targetValue = 0f,
-        animationSpec = infiniteRepeatable(tween(2000, delayMillis = 1000, easing = LinearEasing), RepeatMode.Restart), label = "A2"
+        animationSpec = infiniteRepeatable(
+            tween(2000, delayMillis = 1000, easing = LinearEasing),
+            RepeatMode.Restart
+        ), label = "A2"
     )
 
     Column(
@@ -412,21 +555,42 @@ fun ConnectingStateView(deviceName: String) {
     ) {
         Box(contentAlignment = Alignment.Center) {
             // Ripple 1
-            Box(Modifier.size(80.dp).graphicsLayer(scaleX = pulse1, scaleY = pulse1, alpha = alpha1).clip(CircleShape).background(CyanElectric))
+            Box(
+                Modifier
+                    .size(80.dp)
+                    .graphicsLayer(scaleX = pulse1, scaleY = pulse1, alpha = alpha1)
+                    .clip(CircleShape)
+                    .background(CyanElectric)
+            )
             // Ripple 2
-            Box(Modifier.size(80.dp).graphicsLayer(scaleX = pulse2, scaleY = pulse2, alpha = alpha2).clip(CircleShape).background(CyanElectric))
-            
+            Box(
+                Modifier
+                    .size(80.dp)
+                    .graphicsLayer(scaleX = pulse2, scaleY = pulse2, alpha = alpha2)
+                    .clip(CircleShape)
+                    .background(CyanElectric)
+            )
+
             // Core
             Box(
-                Modifier.size(80.dp).clip(CircleShape).background(NavySurface).border(2.dp, CyanElectric, CircleShape),
+                Modifier
+                    .size(80.dp)
+                    .clip(CircleShape)
+                    .background(NavySurface)
+                    .border(2.dp, CyanElectric, CircleShape),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(Icons.Default.Print, null, tint = CyanElectric, modifier = Modifier.size(32.dp))
+                Icon(
+                    Icons.Default.Print,
+                    null,
+                    tint = CyanElectric,
+                    modifier = Modifier.size(32.dp)
+                )
             }
         }
-        
+
         Spacer(Modifier.height(48.dp))
-        
+
         Text(
             "Securing Handshake...",
             style = MaterialTheme.typography.headlineSmall,
@@ -758,21 +922,6 @@ fun HardwareDashboard(
     }
 }
 
-@Composable
-fun RowHeader(title: String, onAction: () -> Unit, actionText: String) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 8.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(title, style = MaterialTheme.typography.titleMedium, color = CyanElectric)
-        TextButton(onClick = onAction) {
-            Text(actionText)
-        }
-    }
-}
 
 @Composable
 fun DeviceListItem(device: PrinterDevice, onClick: () -> Unit) {

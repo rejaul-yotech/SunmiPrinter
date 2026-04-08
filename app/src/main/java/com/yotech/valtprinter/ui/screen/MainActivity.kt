@@ -31,13 +31,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.yotech.valtprinter.data.local.entity.PairedDeviceEntity
 import com.yotech.valtprinter.domain.model.PrinterState
 import com.yotech.valtprinter.ui.receipt.ReceiptPreviewScreen
 import com.yotech.valtprinter.ui.viewmodel.PrinterViewModel
 import com.yotech.valtprinter.ui.theme.ValtPrinterTheme
 import dagger.hilt.android.AndroidEntryPoint
 
-enum class AppScreen { PRINTER, PREVIEW }
+enum class AppScreen { PRINTER, PREVIEW, PAIRED_DEVICE_DETAILS }
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -49,6 +50,7 @@ class MainActivity : ComponentActivity() {
     private var permissionsGranted by androidx.compose.runtime.mutableStateOf(false)
     private var currentScreen by mutableStateOf(AppScreen.PRINTER)
     private var pendingReturnScreen by mutableStateOf<AppScreen?>(null)
+    private var selectedPairedDevice by mutableStateOf<PairedDeviceEntity?>(null)
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -118,12 +120,32 @@ class MainActivity : ComponentActivity() {
                         when (currentScreen) {
                             AppScreen.PRINTER -> PrinterScreen(
                                 viewModel = viewModel,
-                                onNavigateToPreview = { currentScreen = AppScreen.PREVIEW }
+                                onNavigateToPreview = { currentScreen = AppScreen.PREVIEW },
+                                onOpenPairedDetails = { paired ->
+                                    selectedPairedDevice = paired
+                                    currentScreen = AppScreen.PAIRED_DEVICE_DETAILS
+                                }
                             )
                             AppScreen.PREVIEW -> ReceiptPreviewScreen(
                                 viewModel = viewModel,
                                 onBack = { currentScreen = AppScreen.PRINTER }
                             )
+                            AppScreen.PAIRED_DEVICE_DETAILS -> {
+                                val paired = selectedPairedDevice
+                                if (paired == null) {
+                                    currentScreen = AppScreen.PRINTER
+                                } else {
+                                    PairedDeviceDetailsScreen(
+                                        device = paired,
+                                        onBack = { currentScreen = AppScreen.PRINTER },
+                                        onUnpair = {
+                                            viewModel.unpairDevice(paired.id)
+                                            selectedPairedDevice = null
+                                            currentScreen = AppScreen.PRINTER
+                                        }
+                                    )
+                                }
+                            }
                         }
                     }
                 }

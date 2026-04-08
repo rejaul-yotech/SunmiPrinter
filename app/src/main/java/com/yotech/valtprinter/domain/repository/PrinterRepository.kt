@@ -13,6 +13,7 @@ interface PrinterRepository {
     fun startScan()
     fun stopScan()
     suspend fun connect(device: PrinterDevice)
+    suspend fun connectPairedDevice(device: PrinterDevice): Boolean
     suspend fun autoConnectUsb(): Boolean
     suspend fun printReceipt(bitmap: Bitmap): PrintResult
     suspend fun printChunk(bitmap: Bitmap, isLastChunk: Boolean): PrintResult

@@ -231,6 +231,47 @@ class PrinterRepositoryImpl @Inject constructor(
         })
     }
 
+    override suspend fun connectPairedDevice(device: PrinterDevice): Boolean {
+        if (internalPrintersMap.containsKey(device.id)) {
+            connect(device)
+            return true
+        }
+
+        val method = when (device.connectionType) {
+            ConnectionType.USB -> 1000
+            ConnectionType.LAN -> 2000
+            ConnectionType.BLUETOOTH -> 3000
+        }
+
+        var found = false
+        try {
+            SunmiPrinterManager.getInstance()
+                .searchCloudPrinter(context, method) { printer ->
+                    if (printer == null || found) return@searchCloudPrinter
+                    val info = printer.cloudPrinterInfo ?: return@searchCloudPrinter
+                    val uniqueId = when (method) {
+                        1000 -> "USB-${info.vid}-${info.pid}"
+                        3000 -> "BT-${info.mac}"
+                        else -> "LAN-${info.address}"
+                    }
+                    if (uniqueId == device.id) {
+                        found = true
+                        handlePrinterFound(printer)
+                    }
+                }
+            delay(1500)
+            SunmiPrinterManager.getInstance().stopSearch(context, method)
+        } catch (e: Exception) {
+            Log.e("PRINTER_DEBUG", "connectPairedDevice search failed", e)
+        }
+
+        if (found && internalPrintersMap.containsKey(device.id)) {
+            connect(device)
+            return true
+        }
+        return false
+    }
+
     /**
      * ELITE RESILIENCE: Perpetual Auto-Reconnection Hub
      * Instead of timing out, this logic enters an infinite "Resilience Loop"
