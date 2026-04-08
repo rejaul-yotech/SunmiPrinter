@@ -59,6 +59,8 @@ class PrinterRepositoryImpl @Inject constructor(
     // Concurrency Guard for Handshakes
     private var isConnecting = false
     private var isRecovering = false
+    // Monotonic token for connect() attempts; stale callbacks are ignored.
+    private var activeConnectAttemptId = 0L
 
     // Real-time Vitality: Heartbeat
     private var heartbeatJob: Job? = null
@@ -126,6 +128,7 @@ class PrinterRepositoryImpl @Inject constructor(
     override suspend fun connect(device: PrinterDevice) {
         if (isConnecting) return
         isConnecting = true
+        val connectAttemptId = ++activeConnectAttemptId
         
         stopAllSearches()
         reconnectionJob?.cancel()
@@ -143,6 +146,10 @@ class PrinterRepositoryImpl @Inject constructor(
         
         cloudPrinter.connect(context, object : ConnectCallback {
             override fun onConnect() {
+                if (connectAttemptId != activeConnectAttemptId) {
+                    Log.w("PRINTER_DEBUG", "Ignoring stale onConnect for ${device.id} (attempt=$connectAttemptId)")
+                    return
+                }
                 isConnecting = false
                 isRecovering = false
                 activeCloudPrinter = cloudPrinter
@@ -158,7 +165,16 @@ class PrinterRepositoryImpl @Inject constructor(
             }
 
             override fun onFailed(err: String?) {
+                if (connectAttemptId != activeConnectAttemptId) {
+                    Log.w("PRINTER_DEBUG", "Ignoring stale onFailed for ${device.id} (attempt=$connectAttemptId): $err")
+                    return
+                }
                 isConnecting = false
+                // If already connected, never let a delayed failure callback overwrite success state.
+                if (connectedDevice?.id == device.id && activeCloudPrinter != null) {
+                    Log.w("PRINTER_DEBUG", "Ignoring late onFailed after active connection for ${device.id}: $err")
+                    return
+                }
                 // Only show error UI if we aren't in a silent recovery loop
                 if (!isRecovering) {
                     _printerState.value = PrinterState.Error("Connect Failed", err ?: "Unknown error")
@@ -168,6 +184,10 @@ class PrinterRepositoryImpl @Inject constructor(
             }
 
             override fun onDisConnect() {
+                if (connectAttemptId != activeConnectAttemptId) {
+                    Log.w("PRINTER_DEBUG", "Ignoring stale onDisConnect for ${device.id} (attempt=$connectAttemptId)")
+                    return
+                }
                 stopHeartbeat()
                 activeCloudPrinter = null
                 val lastDev = connectedDevice ?: device
