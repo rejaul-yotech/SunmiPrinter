@@ -16,21 +16,38 @@ import javax.inject.Singleton
 class SdkPrintSource @Inject constructor() {
 
     /**
-     * Clears the SDK's internal transaction buffer to guarantee a clean slate.
+     * Clears the SDK's internal transaction buffer and configures the printer for
+     * edge-to-edge receipt printing — mirroring every pre-image command that LAN sends.
      *
      * MUST be called once before the first [addToBuffer] call for any new print job.
-     * Without this, stale commands from a previous failed or incomplete job accumulate
-     * in the buffer and are committed together with the new job, causing:
-     * - Corrupted / duplicate content printed before the real receipt
-     * - Off-sync line positioning, leading to premature paper cuts on USB/BT
+     *
+     * ## Why backfeed?
+     * After the previous receipt's `dotsFeed(96)` + `cutPaper()`, the paper sits 12 mm past
+     * the cutter blade. Without pulling it back, the next receipt starts with 12 mm of blank
+     * paper at the top. LAN sends `GS ( K` (enable auto-backfeed) + `ESC K 96` (pull back
+     * 12 mm) before every chunk. We replicate this once at buffer init via [appendRawData].
      */
     fun initBuffer(printer: CloudPrinter): Boolean {
         try {
             printer.clearTransBuffer()
-            Log.d("SDK_PRINT", "Buffer cleared — clean slate for new job")
+
+            // --- Mirror LAN's pre-image setup (RawSocketPrintSource lines 36–56) ---
+
+            // 1. Enable auto-backfeed: GS ( K pL pH m n
+            printer.appendRawData(byteArrayOf(0x1D, 0x28, 0x4B, 0x02, 0x00, 0x02, 0x02))
+
+            // 2. Manual backfeed 96 dots (12 mm): ESC K n
+            //    Pulls paper back so the first pixel prints flush with the cut edge.
+            printer.appendRawData(byteArrayOf(0x1B, 0x4B, 0x60))
+
+            // 3. Left margin = 0 and printable width = 576 dots (full 80 mm head)
+            printer.setLeftSpace(0)
+            printer.setPrintWidth(576)
+
+            Log.d("SDK_PRINT", "Buffer cleared + backfeed + margins set — clean slate")
             return true
         } catch (e: Exception) {
-            Log.e("SDK_PRINT", "clearTransBuffer failed: ${e.message}", e)
+            Log.e("SDK_PRINT", "initBuffer failed: ${e.message}", e)
             return false
         }
     }
