@@ -31,4 +31,13 @@ interface PrinterRepository {
     fun setCaptureView(view: android.view.View)
     
     fun disconnect()
+
+    /** Returns true if at least one USB device is currently attached via UsbManager. */
+    fun isUsbPrinterPresent(): Boolean
+
+    /**
+     * Returns true if the Bluetooth device with the given MAC address is bonded at OS level.
+     * A bonded device reconnects without showing a pair dialog.
+     */
+    fun isBtDeviceBonded(mac: String): Boolean
 }

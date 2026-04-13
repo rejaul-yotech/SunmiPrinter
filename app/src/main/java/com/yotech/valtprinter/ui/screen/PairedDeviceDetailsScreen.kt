@@ -23,10 +23,14 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.yotech.valtprinter.data.local.entity.PairedDeviceEntity
 import com.yotech.valtprinter.ui.theme.NavySurface
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -61,11 +65,25 @@ fun PairedDeviceDetailsScreen(
                     containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.82f)
                 )
             ) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
                     Text("Name: ${device.name}", fontWeight = FontWeight.SemiBold)
                     Text("Type: ${device.connectionType}")
                     Text("Model: ${device.model ?: "Unknown"}")
                     Text("Address: ${device.address.ifBlank { "N/A" }}")
+                    val lastSeenFormatted = SimpleDateFormat("MMM d, yyyy HH:mm", Locale.getDefault())
+                        .format(Date(device.lastSeenAt))
+                    Text("Last connected: $lastSeenFormatted")
+                    if (device.connectionType == "BLUETOOTH") {
+                        Text(
+                            if (device.isBonded) "Bond status: Paired"
+                            else "Bond status: Not paired — pair via Bluetooth settings",
+                            color = if (device.isBonded) Color(0xFF1DB954)
+                            else MaterialTheme.colorScheme.error
+                        )
+                    }
                 }
             }
 
@@ -73,7 +91,9 @@ fun PairedDeviceDetailsScreen(
 
             Button(
                 onClick = onUnpair,
-                modifier = Modifier.fillMaxWidth().height(54.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(54.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
             ) {
                 Text("UNPAIR DEVICE")
@@ -81,4 +101,3 @@ fun PairedDeviceDetailsScreen(
         }
     }
 }
-

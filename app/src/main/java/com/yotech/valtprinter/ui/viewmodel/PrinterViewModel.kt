@@ -7,6 +7,7 @@ import com.yotech.valtprinter.data.local.dao.PairedDeviceDao
 import com.yotech.valtprinter.data.local.dao.PrintDao
 import com.yotech.valtprinter.data.local.entity.PairedDeviceEntity
 import com.yotech.valtprinter.data.local.datastore.PrinterDataStore
+import com.yotech.valtprinter.domain.model.ConnectionType
 import com.yotech.valtprinter.domain.model.PrintResult
 import com.yotech.valtprinter.domain.model.PrintStatus
 import com.yotech.valtprinter.domain.model.PrinterDevice
@@ -70,10 +71,20 @@ class PrinterViewModel @Inject constructor(
     private val _isAlarmAcknowledged = MutableStateFlow(false)
     val isAlarmAcknowledged: StateFlow<Boolean> = _isAlarmAcknowledged.asStateFlow()
 
+    // True when a USB printer device is physically plugged in
+    private val _usbPresent = MutableStateFlow(false)
+    val usbPresent: StateFlow<Boolean> = _usbPresent.asStateFlow()
+
+    // One-shot messages surfaced as a Snackbar in the UI
+    private val _snackbarMessage = MutableSharedFlow<String>(
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+    val snackbarMessage: SharedFlow<String> = _snackbarMessage.asSharedFlow()
+
     fun expandHardwareHub() {
         _isAlarmAcknowledged.value = false
     }
-
 
     init {
         _printStatus.tryEmit(PrintStatus.Idle)
@@ -88,23 +99,41 @@ class PrinterViewModel @Inject constructor(
 
         viewModelScope.launch {
             printerState.collect { state ->
-                if (state is PrinterState.Connected) {
-                    pairedDeviceDao.upsert(
-                        PairedDeviceEntity(
-                            id = state.device.id,
-                            name = state.device.name,
-                            address = state.device.address,
-                            connectionType = state.device.connectionType.name,
-                            model = state.device.model,
-                            lastSeenAt = System.currentTimeMillis()
+                when (state) {
+                    is PrinterState.Connected -> {
+                        // Determine BT bond status so we can warn the user if it was lost later
+                        val isBonded = if (state.device.connectionType == ConnectionType.BLUETOOTH) {
+                            val mac = state.device.id.removePrefix("BT-")
+                            repository.isBtDeviceBonded(mac)
+                        } else {
+                            true
+                        }
+                        pairedDeviceDao.upsert(
+                            PairedDeviceEntity(
+                                id = state.device.id,
+                                name = state.device.name,
+                                address = state.device.address,
+                                connectionType = state.device.connectionType.name,
+                                model = state.device.model,
+                                lastSeenAt = System.currentTimeMillis(),
+                                isBonded = isBonded
+                            )
                         )
-                    )
+                        _snackbarMessage.tryEmit("Connected to ${state.device.name}")
+                    }
+                    is PrinterState.Error -> {
+                        if (state.message == "Connect Failed") {
+                            _snackbarMessage.tryEmit("Could not connect — try scanning again")
+                        }
+                    }
+                    else -> {}
                 }
             }
         }
 
-        // Attempt to auto Connect USB immediately upon boot up
+        // Attempt to auto-connect USB immediately on boot
         onUsbAttached()
+        _usbPresent.value = repository.isUsbPrinterPresent()
     }
 
     fun acknowledgeAlarm() {
@@ -112,13 +141,16 @@ class PrinterViewModel @Inject constructor(
     }
 
     fun onUsbAttached() {
+        _usbPresent.value = repository.isUsbPrinterPresent()
         viewModelScope.launch {
-            val found = autoConnectUsbUseCase()
-            // If nothing found, fall back to Idle so user can manually scan
-            if (!found && printerState.value === PrinterState.AutoConnecting) {
-                // Done internally by repo, but we can call off auto connect explicitly if needed
-            }
+            autoConnectUsbUseCase()
+            // Refresh again after detection attempt completes
+            _usbPresent.value = repository.isUsbPrinterPresent()
         }
+    }
+
+    fun onUsbDetached() {
+        _usbPresent.value = false
     }
 
     fun startDiscovery() {
@@ -137,19 +169,31 @@ class PrinterViewModel @Inject constructor(
 
     fun connectToPairedDevice(device: PairedDeviceEntity) {
         viewModelScope.launch {
+            // BT bond check: if the device is no longer bonded at OS level, guide the user
+            // instead of letting an unexpected OS pair dialog appear mid-app.
+            if (device.connectionType == "BLUETOOTH") {
+                val mac = device.id.removePrefix("BT-")
+                if (!repository.isBtDeviceBonded(mac)) {
+                    _snackbarMessage.tryEmit("Pair '${device.name}' in Bluetooth settings first, then try again.")
+                    return@launch
+                }
+            }
+
+            _snackbarMessage.tryEmit("Connecting to ${device.name}…")
+
             val domainDevice = PrinterDevice(
                 id = device.id,
                 name = device.name,
                 address = device.address,
                 port = if (device.connectionType == "LAN") 9100 else 0,
                 connectionType = runCatching {
-                    com.yotech.valtprinter.domain.model.ConnectionType.valueOf(device.connectionType)
-                }.getOrDefault(com.yotech.valtprinter.domain.model.ConnectionType.BLUETOOTH),
+                    ConnectionType.valueOf(device.connectionType)
+                }.getOrDefault(ConnectionType.BLUETOOTH),
                 model = device.model
             )
             val connected = repository.connectPairedDevice(domainDevice)
             if (!connected) {
-                _printStatus.tryEmit(PrintStatus.Failure("Paired device not found nearby. Please scan again."))
+                _snackbarMessage.tryEmit("'${device.name}' not found nearby — scanning…")
                 startDiscovery()
             }
         }
@@ -188,14 +232,12 @@ class PrinterViewModel @Inject constructor(
 
     fun rescanForOthers() {
         viewModelScope.launch {
-            // Manual user intent: stop current session and enter stable manual scanning mode.
             disconnectUseCase()
             startScanUseCase()
         }
     }
 
     fun reconnect() {
-        // Restart the automatic scan/connect flow or force check if already in progress
         startDiscovery()
     }
 

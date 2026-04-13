@@ -716,6 +716,23 @@ class PrinterRepositoryImpl @Inject constructor(
         }
     }
 
+    override fun isUsbPrinterPresent(): Boolean {
+        val usbManager = context.getSystemService(Context.USB_SERVICE) as? UsbManager
+        return usbManager?.deviceList?.isNotEmpty() == true
+    }
+
+    @android.annotation.SuppressLint("MissingPermission")
+    override fun isBtDeviceBonded(mac: String): Boolean {
+        return try {
+            val adapter = android.bluetooth.BluetoothAdapter.getDefaultAdapter()
+            adapter?.bondedDevices?.any { it.address == mac } == true
+        } catch (e: Exception) {
+            Log.w("PRINTER_DEBUG", "BT bond check failed: ${e.message}")
+            // If bond state can't be read, allow the connection attempt to proceed.
+            true
+        }
+    }
+
     override fun disconnect() {
         isManualDisconnect = true
         stopHeartbeat()

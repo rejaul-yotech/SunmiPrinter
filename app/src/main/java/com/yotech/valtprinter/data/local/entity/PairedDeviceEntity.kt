@@ -16,6 +16,8 @@ data class PairedDeviceEntity(
     @ColumnInfo(name = "paired_at")
     val pairedAt: Long = System.currentTimeMillis(),
     @ColumnInfo(name = "last_seen_at")
-    val lastSeenAt: Long = System.currentTimeMillis()
+    val lastSeenAt: Long = System.currentTimeMillis(),
+    @ColumnInfo(name = "is_bonded")
+    val isBonded: Boolean = false
 )
 

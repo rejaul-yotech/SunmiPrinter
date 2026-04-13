@@ -59,6 +59,9 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -104,12 +107,21 @@ fun PrinterScreen(
     val state by viewModel.printerState.collectAsStateWithLifecycle()
     val devices by viewModel.discoveredDevices.collectAsStateWithLifecycle()
     val pairedDevices by viewModel.pairedDevices.collectAsStateWithLifecycle()
+    val usbPresent by viewModel.usbPresent.collectAsStateWithLifecycle()
 
     val isHardwareFault by viewModel.isHardwareFault.collectAsStateWithLifecycle()
     val isAlarmAcknowledged by viewModel.isAlarmAcknowledged.collectAsStateWithLifecycle()
     val recentJobs by viewModel.recentPrintJobs.collectAsStateWithLifecycle()
 
+    val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
+
+    // Collect snackbar messages from the ViewModel
+    LaunchedEffect(snackbarHostState) {
+        viewModel.snackbarMessage.collect { message ->
+            snackbarHostState.showSnackbar(message, duration = SnackbarDuration.Short)
+        }
+    }
 
     LaunchedEffect(isHardwareFault, isAlarmAcknowledged) {
         if (isHardwareFault && !isAlarmAcknowledged) {
@@ -154,7 +166,6 @@ fun PrinterScreen(
 
             var showHandshakeSuccess by remember { mutableStateOf(false) }
 
-            // Elite: Handshake Success Animation Trigger
             LaunchedEffect(state) {
                 if (state is PrinterState.Connected) {
                     showHandshakeSuccess = true
@@ -172,13 +183,16 @@ fun PrinterScreen(
                     )
 
                     is PrinterState.AutoConnecting -> AutoConnectingView()
+
                     is PrinterState.Scanning -> ScanningStateView(
                         pairedDevices = pairedDevices,
                         devices = devices,
+                        usbPresent = usbPresent,
                         onPairedConnect = viewModel::connectToPairedDevice,
                         onPairedDetails = onOpenPairedDetails,
                         onDeviceSelected = viewModel::connectToDevice,
-                        onStopScan = viewModel::stopDiscovery
+                        onStopScan = viewModel::stopDiscovery,
+                        onUsbConnect = viewModel::onUsbAttached
                     )
 
                     is PrinterState.Connecting -> ConnectingStateView(
@@ -186,7 +200,6 @@ fun PrinterScreen(
                     )
 
                     else -> {
-                        // Contextual Hardware Dashboard (Morphs between Connected, Reconnecting, and Error)
                         HardwareDashboard(
                             state = currentState,
                             recentJobs = recentJobs,
@@ -198,8 +211,16 @@ fun PrinterScreen(
                         )
                     }
                 }
-            } // End AnimatedContent
-        } // End Column
+            }
+        }
+
+        // Snackbar for connection feedback
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+        )
 
         // Top-level Box layer: ELITE RESILIENCE HUB
         AnimatedVisibility(
@@ -215,8 +236,8 @@ fun PrinterScreen(
                 onRescan = { viewModel.rescanForOthers() }
             )
         }
-    } // End Box
-} // End fun
+    }
+}
 
 @Composable
 fun ResilienceHubOverlay(
@@ -231,8 +252,7 @@ fun ResilienceHubOverlay(
             .fillMaxSize()
             .background(if (isMinimized) Color.Transparent else Color.Black.copy(alpha = 0.6f))
             .clickable(enabled = true) {
-                if (isMinimized) onExpand() else { /* Do nothing, click inside card handles buttons */
-                }
+                if (isMinimized) onExpand() else { /* clicks handled by card buttons */ }
             },
         contentAlignment = if (isMinimized) Alignment.BottomCenter else Alignment.Center
     ) {
@@ -265,7 +285,7 @@ fun ResilienceHubOverlay(
                         imageVector = Icons.Default.Warning,
                         contentDescription = null,
                         modifier = Modifier.size(64.dp),
-                        tint = Color(0xFFFFA500) // Calm warning orange
+                        tint = Color(0xFFFFA500)
                     )
                     Spacer(Modifier.height(16.dp))
                     Text(
@@ -283,7 +303,6 @@ fun ResilienceHubOverlay(
                     Spacer(Modifier.height(24.dp))
                 }
 
-                // Resilience Checklist
                 Surface(
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f),
                     shape = RoundedCornerShape(16.dp),
@@ -370,13 +389,22 @@ fun AutoConnectingView() {
 fun ScanningStateView(
     pairedDevices: List<PairedDeviceEntity>,
     devices: List<PrinterDevice>,
+    usbPresent: Boolean,
     onPairedConnect: (PairedDeviceEntity) -> Unit,
     onPairedDetails: (PairedDeviceEntity) -> Unit,
     onDeviceSelected: (PrinterDevice) -> Unit,
-    onStopScan: () -> Unit
+    onStopScan: () -> Unit,
+    onUsbConnect: () -> Unit
 ) {
     var showAllPaired by remember { mutableStateOf(false) }
     val visiblePaired = if (showAllPaired) pairedDevices else pairedDevices.take(2)
+
+    // IDs already paired — exclude them from the "Available Devices" scan list
+    val pairedIds = remember(pairedDevices) { pairedDevices.map { it.id }.toSet() }
+    // Which paired devices are currently visible in the active scan (nearby detection)
+    val nearbyIds = remember(devices) { devices.map { it.id }.toSet() }
+    // Only show unpaired devices in Available Devices
+    val unpaired = remember(devices, pairedIds) { devices.filter { it.id !in pairedIds } }
 
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxSize()) {
 
@@ -392,6 +420,11 @@ fun ScanningStateView(
             )
         }
 
+        Spacer(Modifier.height(12.dp))
+
+        // USB status card — always shown so users know USB state at a glance
+        UsbStatusCard(usbPresent = usbPresent, onConnect = onUsbConnect)
+
         if (pairedDevices.isNotEmpty()) {
             Spacer(Modifier.height(12.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
@@ -402,7 +435,7 @@ fun ScanningStateView(
                 )
             }
 
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(8.dp))
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(
@@ -411,9 +444,11 @@ fun ScanningStateView(
                 border = BorderStroke(1.dp, Color.White.copy(alpha = 0.1f))
             ) {
                 Column(modifier = Modifier.padding(vertical = 6.dp)) {
-                    visiblePaired.forEach { paired ->
+                    visiblePaired.forEachIndexed { index, paired ->
                         PairedDeviceItem(
                             device = paired,
+                            isLastConnected = index == 0,
+                            isNearby = paired.id in nearbyIds,
                             onConnect = { onPairedConnect(paired) },
                             onDetails = { onPairedDetails(paired) }
                         )
@@ -452,7 +487,7 @@ fun ScanningStateView(
             }
         }
 
-        if (devices.isEmpty()) {
+        if (unpaired.isEmpty()) {
             Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = CyanElectric)
             }
@@ -467,7 +502,7 @@ fun ScanningStateView(
                 border = BorderStroke(1.dp, Color.White.copy(alpha = 0.1f))
             ) {
                 LazyColumn(Modifier.fillMaxSize()) {
-                    items(devices, key = { it.id }) { device ->
+                    items(unpaired, key = { it.id }) { device ->
                         DeviceListItem(device, onClick = { onDeviceSelected(device) })
                         HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
                     }
@@ -480,10 +515,13 @@ fun ScanningStateView(
 @Composable
 fun PairedDeviceItem(
     device: PairedDeviceEntity,
+    isLastConnected: Boolean,
+    isNearby: Boolean,
     onConnect: () -> Unit,
     onDetails: () -> Unit
 ) {
     ListItem(
+        modifier = Modifier.clickable(onClick = onConnect),
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
         leadingContent = {
             Icon(
@@ -496,24 +534,146 @@ fun PairedDeviceItem(
                 tint = CyanElectric
             )
         },
-        headlineContent = { Text(device.name, style = MaterialTheme.typography.titleSmall) },
+        headlineContent = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(device.name, style = MaterialTheme.typography.titleSmall)
+                if (isLastConnected) {
+                    Spacer(Modifier.width(6.dp))
+                    Surface(
+                        color = CyanElectric.copy(alpha = 0.15f),
+                        shape = RoundedCornerShape(4.dp)
+                    ) {
+                        Text(
+                            "LAST USED",
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = CyanElectric,
+                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+            }
+        },
         supportingContent = {
-            Text(
-                device.model ?: device.address,
-                color = MaterialTheme.colorScheme.secondary
-            )
+            Column {
+                Text(
+                    device.model ?: device.address.ifBlank { device.connectionType },
+                    color = MaterialTheme.colorScheme.secondary,
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        formatLastSeen(device.lastSeenAt),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
+                    )
+                    if (isNearby) {
+                        Spacer(Modifier.width(6.dp))
+                        Surface(
+                            color = Color(0xFF1DB954).copy(alpha = 0.15f),
+                            shape = RoundedCornerShape(4.dp)
+                        ) {
+                            Text(
+                                "NEARBY",
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF1DB954),
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                }
+            }
         },
         trailingContent = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = onConnect) { Text("Connect") }
-                Icon(
-                    imageVector = Icons.Default.Info,
-                    contentDescription = "Device details",
-                    modifier = Modifier.clickable { onDetails() }
-                )
-            }
+            Icon(
+                imageVector = Icons.Default.Info,
+                contentDescription = "Device details",
+                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                modifier = Modifier
+                    .size(20.dp)
+                    .clickable(onClick = onDetails)
+            )
         }
     )
+}
+
+/**
+ * Pinned card at the top of the scan screen showing real-time USB printer presence.
+ * Tapping when a device is detected immediately triggers USB auto-connect.
+ */
+@Composable
+fun UsbStatusCard(usbPresent: Boolean, onConnect: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = if (usbPresent)
+                CyanElectric.copy(alpha = 0.08f)
+            else
+                MaterialTheme.colorScheme.surface.copy(alpha = 0.4f)
+        ),
+        border = BorderStroke(
+            1.dp,
+            if (usbPresent) CyanElectric.copy(alpha = 0.35f) else Color.White.copy(alpha = 0.06f)
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(if (usbPresent) Modifier.clickable(onClick = onConnect) else Modifier)
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.Usb,
+                contentDescription = null,
+                tint = if (usbPresent) CyanElectric
+                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f),
+                modifier = Modifier.size(22.dp)
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "USB Printer",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = if (usbPresent) MaterialTheme.colorScheme.onSurface
+                    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
+                )
+                Text(
+                    if (usbPresent) "Device detected — tap to connect instantly"
+                    else "No USB device detected",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (usbPresent) CyanElectric
+                    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
+                )
+            }
+            if (usbPresent) {
+                Surface(
+                    color = CyanElectric.copy(alpha = 0.15f),
+                    shape = RoundedCornerShape(4.dp)
+                ) {
+                    Text(
+                        "READY",
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = CyanElectric,
+                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun formatLastSeen(lastSeenAt: Long): String {
+    val diff = System.currentTimeMillis() - lastSeenAt
+    return when {
+        diff < 60_000L -> "Just now"
+        diff < 3_600_000L -> "${diff / 60_000L}m ago"
+        diff < 86_400_000L -> "${diff / 3_600_000L}h ago"
+        diff < 604_800_000L -> "${diff / 86_400_000L}d ago"
+        else -> "${diff / 604_800_000L}w ago"
+    }
 }
 
 @Composable
@@ -554,7 +714,6 @@ fun ConnectingStateView(deviceName: String) {
         verticalArrangement = Arrangement.Center
     ) {
         Box(contentAlignment = Alignment.Center) {
-            // Ripple 1
             Box(
                 Modifier
                     .size(80.dp)
@@ -562,7 +721,6 @@ fun ConnectingStateView(deviceName: String) {
                     .clip(CircleShape)
                     .background(CyanElectric)
             )
-            // Ripple 2
             Box(
                 Modifier
                     .size(80.dp)
@@ -570,8 +728,6 @@ fun ConnectingStateView(deviceName: String) {
                     .clip(CircleShape)
                     .background(CyanElectric)
             )
-
-            // Core
             Box(
                 Modifier
                     .size(80.dp)
@@ -615,7 +771,6 @@ fun HardwareDashboard(
     onRetry: () -> Unit,
     onScanOthers: () -> Unit
 ) {
-    // Breathing Aura Animation
     val infiniteTransition = rememberInfiniteTransition(label = "AuraTransition")
     val auraAlpha by infiniteTransition.animateFloat(
         initialValue = 0.2f,
@@ -636,7 +791,6 @@ fun HardwareDashboard(
         label = "BorderColor"
     )
 
-    // Icon Shaking Animation
     val shakeOffset by infiniteTransition.animateFloat(
         initialValue = -2f,
         targetValue = 2f,
@@ -653,7 +807,6 @@ fun HardwareDashboard(
             shape = RoundedCornerShape(24.dp),
             modifier = Modifier
                 .fillMaxWidth()
-                // Elite Neon Glow Aura
                 .drawBehind {
                     if (state !is PrinterState.Connected) {
                         drawRoundRect(
@@ -676,7 +829,6 @@ fun HardwareDashboard(
                     .fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Persistent Icon Area with Morphing Elements
                 Box(contentAlignment = Alignment.Center) {
                     val iconColor by animateColorAsState(
                         if (state is PrinterState.Error || state is PrinterState.Reconnecting) Color.Red else CyanElectric,
@@ -700,7 +852,6 @@ fun HardwareDashboard(
                             .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)),
                         contentAlignment = Alignment.Center
                     ) {
-                        // Handshake Success Overlay
                         if (showHandshakeSuccess) {
                             Icon(
                                 imageVector = Icons.Default.CheckCircle,
@@ -718,7 +869,6 @@ fun HardwareDashboard(
                                             ConnectionType.BLUETOOTH -> Icons.Default.Bluetooth
                                             ConnectionType.LAN -> Icons.Default.Wifi
                                         }
-
                                         else -> Icons.Default.Print
                                     }
                                 },
@@ -753,18 +903,10 @@ fun HardwareDashboard(
                     when (s) {
                         is PrinterState.Reconnecting -> {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text(
-                                    s.microState,
-                                    color = CyanElectric,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text(
-                                    "Recovery active...",
-                                    style = MaterialTheme.typography.labelSmall
-                                )
+                                Text(s.microState, color = CyanElectric, fontWeight = FontWeight.Bold)
+                                Text("Recovery active...", style = MaterialTheme.typography.labelSmall)
                             }
                         }
-
                         is PrinterState.Error -> {
                             Text(
                                 "Hardware Fault Detected",
@@ -772,7 +914,6 @@ fun HardwareDashboard(
                                 fontWeight = FontWeight.Bold
                             )
                         }
-
                         is PrinterState.Connected -> {
                             Text(
                                 s.device.address,
@@ -780,7 +921,6 @@ fun HardwareDashboard(
                                 style = MaterialTheme.typography.bodySmall
                             )
                         }
-
                         else -> {}
                     }
                 }
@@ -789,7 +929,6 @@ fun HardwareDashboard(
 
         Spacer(Modifier.height(16.dp))
 
-        // Queue Assurance Message (Reassurance during downtime)
         if (state is PrinterState.Reconnecting || state is PrinterState.Error) {
             Card(
                 colors = CardDefaults.cardColors(containerColor = CyanElectric.copy(alpha = 0.05f)),
@@ -807,7 +946,6 @@ fun HardwareDashboard(
             Spacer(Modifier.height(16.dp))
         }
 
-        // Action Area
         Column(modifier = Modifier.weight(1f)) {
             if (recentJobs.isNotEmpty() && state is PrinterState.Connected) {
                 Text(
@@ -829,12 +967,9 @@ fun HardwareDashboard(
                     }
                 }
             } else if (state is PrinterState.Error) {
-                // Diagnostic Card
                 Card(
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer.copy(
-                            alpha = 0.1f
-                        )
+                        containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.1f)
                     )
                 ) {
                     Text(
@@ -848,7 +983,6 @@ fun HardwareDashboard(
             }
         }
 
-        // Sticky Adaptive Buttons
         Column(modifier = Modifier.fillMaxWidth()) {
             if (state is PrinterState.Connected) {
                 Button(
@@ -864,30 +998,19 @@ fun HardwareDashboard(
                 }
                 Spacer(Modifier.height(12.dp))
                 OutlinedButton(
-                    onClick = {
-                        // Elite: Manual disconnect resets everything
-                        onDisconnect()
-                    },
+                    onClick = onDisconnect,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(50.dp),
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.error)
                 ) {
-                    Icon(
-                        Icons.Default.LinkOff,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.error
-                    )
+                    Icon(Icons.Default.LinkOff, contentDescription = null, tint = MaterialTheme.colorScheme.error)
                     Spacer(Modifier.width(8.dp))
                     Text("DISCONNECT PRINTER", color = MaterialTheme.colorScheme.error)
                 }
             } else if (state is PrinterState.Reconnecting || state is PrinterState.Error) {
-                // Elite Adaptive Button for Downtime
                 Button(
-                    onClick = {
-                        // Stop recovery loop and go to manual scan
-                        onDisconnect()
-                    },
+                    onClick = onDisconnect,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(60.dp),
@@ -921,7 +1044,6 @@ fun HardwareDashboard(
         }
     }
 }
-
 
 @Composable
 fun DeviceListItem(device: PrinterDevice, onClick: () -> Unit) {
