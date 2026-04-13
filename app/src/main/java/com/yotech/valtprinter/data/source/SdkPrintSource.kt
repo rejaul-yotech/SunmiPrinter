@@ -38,17 +38,24 @@ class SdkPrintSource @Inject constructor() {
     /**
      * Adds a bitmap chunk to the SDK's internal transaction buffer WITHOUT committing to hardware.
      *
+     * ## Why setLineSpacing(0) before printImage?
+     * The SDK printer carries a persistent "line spacing" register (default ~30 dots).
+     * After every printed line — including raster images — the firmware appends this many
+     * blank dots to the paper. LAN printing fixes this with `ESC 3 0` before every chunk.
+     * Without zeroing it here, each 400-px slice gains an extra ~3.75 mm of blank paper,
+     * producing the visible top/bottom whitespace the user observes on USB/BT receipts.
+     *
      * ## Why no commitTransBuffer here?
-     * Calling commitTransBuffer after each chunk creates a race condition on USB/BT:
-     * - The SDK callback fires when data is QUEUED in the kernel driver buffer,
-     *   **not** when the printer has physically advanced the paper through those pixels.
-     * - If finalCut() is called immediately after the callback, the cut command arrives
-     *   at the printer mid-print, slicing the receipt prematurely.
+     * All chunks share one atomic transaction. The cut command sits at the very end of the
+     * buffer and is executed in strict sequence — only after every image is printed.
+     * Committing per-chunk would let the callback fire when data reaches the driver buffer,
+     * not when the printer head has physically advanced through those pixels.
      *
      * The correct pattern is: buffer ALL chunks → one atomic [commitAndCut] at the end.
      */
     suspend fun addToBuffer(printer: CloudPrinter, bitmap: Bitmap) {
         try {
+            printer.setLineSpacing(0)  // Mirror LAN's ESC 3 0: eliminate inter-chunk blank paper
             printer.setAlignment(AlignStyle.LEFT)
             printer.printImage(bitmap, ImageAlgorithm.BINARIZATION)
             Log.d(
@@ -65,19 +72,18 @@ class SdkPrintSource @Inject constructor() {
      * Finalizes the entire print job with a single atomic commit to hardware.
      *
      * This is the ONLY [commitTransBuffer] call for any USB/BT print job. It includes:
-     * 1. [lineFeedCount] lines of paper advance — ensures the last printed pixel is
-     *    physically past the cutter blade before the cut signal is sent.
+     * 1. A [dotsFeed] of 96 dots (12 mm) — mirrors LAN's `ESC J 96` exactly, advancing the
+     *    paper far enough to clear the print-head-to-cutter gap before the blade fires.
+     *    NOTE: We use [dotsFeed] (absolute dots, `ESC J n`) NOT [lineFeed] (line-spacing
+     *    multiples, `ESC d n`). After [addToBuffer] sets line spacing to 0, [lineFeed]
+     *    would advance 0 dots and the cutter would fire through the last printed line.
      * 2. A full paper cut.
-     * 3. An awaitable callback — we **suspend** until the printer confirms receipt,
-     *    guaranteeing the cut happens only after all buffered content is delivered.
-     *
-     * @param lineFeedCount Lines to feed before cutting. Default 6 (~18mm at 30 dots/line),
-     *                      which clears the print head-to-cutter gap on the Sunmi NT311.
+     * 3. An awaitable callback — we suspend until the printer confirms receipt.
      */
-    suspend fun commitAndCut(printer: CloudPrinter, lineFeedCount: Int = 6): PrintResult {
+    suspend fun commitAndCut(printer: CloudPrinter): PrintResult {
         val completable = CompletableDeferred<PrintResult>()
         try {
-            printer.lineFeed(lineFeedCount)
+            printer.dotsFeed(96)  // Mirror LAN's ESC J 96: 12 mm absolute feed before cut
             printer.cutPaper(true)
             printer.commitTransBuffer(object : ResultCallback {
                 override fun onComplete() {
