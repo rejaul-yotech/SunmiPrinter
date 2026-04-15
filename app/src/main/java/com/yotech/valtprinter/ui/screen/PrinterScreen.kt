@@ -422,9 +422,6 @@ fun ScanningStateView(
 
         Spacer(Modifier.height(12.dp))
 
-        // USB status card — always shown so users know USB state at a glance
-        UsbStatusCard(usbPresent = usbPresent, onConnect = onUsbConnect)
-
         if (pairedDevices.isNotEmpty()) {
             Spacer(Modifier.height(12.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
@@ -596,73 +593,6 @@ fun PairedDeviceItem(
             )
         }
     )
-}
-
-/**
- * Pinned card at the top of the scan screen showing real-time USB printer presence.
- * Tapping when a device is detected immediately triggers USB auto-connect.
- */
-@Composable
-fun UsbStatusCard(usbPresent: Boolean, onConnect: () -> Unit) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = if (usbPresent)
-                CyanElectric.copy(alpha = 0.08f)
-            else
-                MaterialTheme.colorScheme.surface.copy(alpha = 0.4f)
-        ),
-        border = BorderStroke(
-            1.dp,
-            if (usbPresent) CyanElectric.copy(alpha = 0.35f) else Color.White.copy(alpha = 0.06f)
-        )
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .then(if (usbPresent) Modifier.clickable(onClick = onConnect) else Modifier)
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = Icons.Default.Usb,
-                contentDescription = null,
-                tint = if (usbPresent) CyanElectric
-                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f),
-                modifier = Modifier.size(22.dp)
-            )
-            Spacer(Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    "USB Printer",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = if (usbPresent) MaterialTheme.colorScheme.onSurface
-                    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
-                )
-                Text(
-                    if (usbPresent) "Device detected — tap to connect instantly"
-                    else "No USB device detected",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (usbPresent) CyanElectric
-                    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
-                )
-            }
-            if (usbPresent) {
-                Surface(
-                    color = CyanElectric.copy(alpha = 0.15f),
-                    shape = RoundedCornerShape(4.dp)
-                ) {
-                    Text(
-                        "READY",
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = CyanElectric,
-                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
-                    )
-                }
-            }
-        }
-    }
 }
 
 private fun formatLastSeen(lastSeenAt: Long): String {
