@@ -1,7 +1,6 @@
 package com.yotech.valtprinter.ui.viewmodel
 
 import android.graphics.Bitmap
-import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.yotech.valtprinter.data.local.dao.PairedDeviceDao
@@ -49,6 +48,12 @@ class PrinterViewModel @Inject constructor(
     private val printerDataStore: PrinterDataStore
 ) : ViewModel() {
 
+    sealed interface PrinterUiEvent {
+        data class ShowMessage(val message: String) : PrinterUiEvent
+        object OpenBluetoothSettings : PrinterUiEvent
+        object RequestBluetoothConnectPermission : PrinterUiEvent
+    }
+
     val printerState: StateFlow<PrinterState> = repository.printerState
     val discoveredDevices: StateFlow<List<PrinterDevice>> = repository.discoveredDevices
 
@@ -57,6 +62,14 @@ class PrinterViewModel @Inject constructor(
         onBufferOverflow = BufferOverflow.DROP_OLDEST
     )
     val printStatus: SharedFlow<PrintStatus> = _printStatus.asSharedFlow()
+
+    private val _uiEvents = MutableSharedFlow<PrinterUiEvent>(
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+    val uiEvents: SharedFlow<PrinterUiEvent> = _uiEvents.asSharedFlow()
+
+    private var pendingBondedReconnectDeviceId: String? = null
 
     val recentPrintJobs: StateFlow<List<com.yotech.valtprinter.data.local.entity.PrintJobEntity>> =
         printDao.getRecentJobsFlow()
@@ -114,10 +127,7 @@ class PrinterViewModel @Inject constructor(
                                 isBonded = isBonded
                             )
                         )
-                    }
-
-                    is PrinterState.Error -> {
-                        Log.e("PrinterVM", state.message)
+                        printerDataStore.setPreferredPrinterId(state.device.id)
                     }
 
                     else -> {}
@@ -128,6 +138,33 @@ class PrinterViewModel @Inject constructor(
         // Attempt to auto-connect USB immediately on boot
         onUsbAttached()
         _usbPresent.value = repository.isUsbPrinterPresent()
+
+        viewModelScope.launch {
+            autoConnectPreferredPrinterIfPossible()
+        }
+    }
+
+    private suspend fun autoConnectPreferredPrinterIfPossible() {
+        val preferredId = printerDataStore.getPreferredPrinterId() ?: return
+        val device = pairedDeviceDao.getById(preferredId) ?: return
+
+        if (device.connectionType == "BLUETOOTH") {
+            if (!repository.hasBtConnectPermission()) {
+                pendingBondedReconnectDeviceId = device.id
+                _uiEvents.tryEmit(PrinterUiEvent.RequestBluetoothConnectPermission)
+                return
+            }
+            val mac = device.id.removePrefix("BT-")
+            if (!repository.isBtDeviceBonded(mac)) {
+                _uiEvents.tryEmit(
+                    PrinterUiEvent.ShowMessage("Printer is not paired. Pair it in Bluetooth settings, then try again.")
+                )
+                _uiEvents.tryEmit(PrinterUiEvent.OpenBluetoothSettings)
+                return
+            }
+        }
+
+        connectToPairedDevice(device)
     }
 
     fun acknowledgeAlarm() {
@@ -166,8 +203,17 @@ class PrinterViewModel @Inject constructor(
             // BT bond check: if the device is no longer bonded at OS level, guide the user
             // instead of letting an unexpected OS pair dialog appear mid-app.
             if (device.connectionType == "BLUETOOTH") {
+                if (!repository.hasBtConnectPermission()) {
+                    pendingBondedReconnectDeviceId = device.id
+                    _uiEvents.tryEmit(PrinterUiEvent.RequestBluetoothConnectPermission)
+                    return@launch
+                }
                 val mac = device.id.removePrefix("BT-")
                 if (!repository.isBtDeviceBonded(mac)) {
+                    _uiEvents.tryEmit(
+                        PrinterUiEvent.ShowMessage("Printer is not paired. Pair it in Bluetooth settings, then connect.")
+                    )
+                    _uiEvents.tryEmit(PrinterUiEvent.OpenBluetoothSettings)
                     return@launch
                 }
             }
@@ -189,9 +235,30 @@ class PrinterViewModel @Inject constructor(
         }
     }
 
+    fun onBluetoothConnectPermissionResult(isGranted: Boolean) {
+        if (!isGranted) {
+            _uiEvents.tryEmit(
+                PrinterUiEvent.ShowMessage("Bluetooth permission denied. Cannot reconnect to the paired printer.")
+            )
+            pendingBondedReconnectDeviceId = null
+            return
+        }
+
+        val pendingId = pendingBondedReconnectDeviceId ?: return
+        pendingBondedReconnectDeviceId = null
+        viewModelScope.launch {
+            val device = pairedDeviceDao.getById(pendingId) ?: return@launch
+            connectToPairedDevice(device)
+        }
+    }
+
     fun unpairDevice(id: String) {
         viewModelScope.launch {
             pairedDeviceDao.deleteById(id)
+            val preferredId = printerDataStore.getPreferredPrinterId()
+            if (preferredId == id) {
+                printerDataStore.setPreferredPrinterId(null)
+            }
         }
     }
 

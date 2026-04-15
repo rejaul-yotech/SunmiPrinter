@@ -65,6 +65,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -97,6 +98,10 @@ import com.yotech.valtprinter.ui.theme.NavySurface
 import com.yotech.valtprinter.ui.theme.VioletElectric
 import com.yotech.valtprinter.ui.viewmodel.PrinterViewModel
 import kotlinx.coroutines.delay
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.Manifest
+import android.os.Build
 
 @Composable
 fun PrinterScreen(
@@ -114,6 +119,39 @@ fun PrinterScreen(
     val recentJobs by viewModel.recentPrintJobs.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    val latestViewModel = rememberUpdatedState(viewModel)
+    val btPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        latestViewModel.value.onBluetoothConnectPermissionResult(isGranted)
+    }
+
+    LaunchedEffect(Unit) {
+        viewModel.uiEvents.collect { event ->
+            when (event) {
+                is PrinterViewModel.PrinterUiEvent.ShowMessage -> {
+                    snackbarHostState.showSnackbar(
+                        message = event.message,
+                        duration = SnackbarDuration.Short
+                    )
+                }
+                PrinterViewModel.PrinterUiEvent.OpenBluetoothSettings -> {
+                    val intent = android.content.Intent(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS)
+                        .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                    runCatching { context.startActivity(intent) }
+                }
+                PrinterViewModel.PrinterUiEvent.RequestBluetoothConnectPermission -> {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        btPermissionLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT)
+                    } else {
+                        latestViewModel.value.onBluetoothConnectPermissionResult(true)
+                    }
+                }
+            }
+        }
+    }
 
     LaunchedEffect(isHardwareFault, isAlarmAcknowledged) {
         if (isHardwareFault && !isAlarmAcknowledged) {
@@ -220,6 +258,14 @@ fun PrinterScreen(
                 onRescan = { viewModel.rescanForOthers() }
             )
         }
+
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 12.dp)
+        )
     }
 }
 

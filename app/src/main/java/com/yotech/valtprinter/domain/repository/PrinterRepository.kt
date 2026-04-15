@@ -40,4 +40,10 @@ interface PrinterRepository {
      * A bonded device reconnects without showing a pair dialog.
      */
     fun isBtDeviceBonded(mac: String): Boolean
+
+    /**
+     * Android 12+ requires runtime permission to query bonded devices and connect over BT.
+     * When false, the UI must request permission BEFORE attempting BT reconnect.
+     */
+    fun hasBtConnectPermission(): Boolean
 }

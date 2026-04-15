@@ -24,6 +24,7 @@ class PrinterDataStore @Inject constructor(@ApplicationContext private val conte
         val MAX_ROLL_HEIGHT_PIXELS = longPreferencesKey("max_roll_height_pixels")
         val IS_PRINTER_PAUSED = booleanPreferencesKey("is_printer_paused")
         val LOG_TTL_DAYS = intPreferencesKey("log_ttl_days")
+        val PREFERRED_PRINTER_ID = stringPreferencesKey("preferred_printer_id")
     }
 
     val accumulatedHeightFlow: Flow<Long> = context.dataStore.data.map { preferences ->
@@ -38,12 +39,20 @@ class PrinterDataStore @Inject constructor(@ApplicationContext private val conte
         preferences[PreferencesKeys.LOG_TTL_DAYS] ?: 30 // Default 30 days
     }
 
+    val preferredPrinterIdFlow: Flow<String?> = context.dataStore.data.map { preferences ->
+        preferences[PreferencesKeys.PREFERRED_PRINTER_ID]
+    }
+
     suspend fun isPrinterPaused(): Boolean {
         return context.dataStore.data.map { it[PreferencesKeys.IS_PRINTER_PAUSED] ?: false }.first()
     }
 
     suspend fun getLogTtlDays(): Int {
         return context.dataStore.data.map { it[PreferencesKeys.LOG_TTL_DAYS] ?: 30 }.first()
+    }
+
+    suspend fun getPreferredPrinterId(): String? {
+        return context.dataStore.data.map { it[PreferencesKeys.PREFERRED_PRINTER_ID] }.first()
     }
 
     suspend fun updateAccumulatedHeight(height: Int) {
@@ -68,6 +77,16 @@ class PrinterDataStore @Inject constructor(@ApplicationContext private val conte
     suspend fun setLogTtl(days: Int) {
         context.dataStore.edit { preferences ->
             preferences[PreferencesKeys.LOG_TTL_DAYS] = days
+        }
+    }
+
+    suspend fun setPreferredPrinterId(printerId: String?) {
+        context.dataStore.edit { preferences ->
+            if (printerId.isNullOrBlank()) {
+                preferences.remove(PreferencesKeys.PREFERRED_PRINTER_ID)
+            } else {
+                preferences[PreferencesKeys.PREFERRED_PRINTER_ID] = printerId
+            }
         }
     }
 }

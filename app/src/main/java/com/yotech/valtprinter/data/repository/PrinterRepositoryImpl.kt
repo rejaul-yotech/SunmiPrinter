@@ -3,7 +3,9 @@ package com.yotech.valtprinter.data.repository
 import android.content.Context
 import android.graphics.Bitmap
 import android.hardware.usb.UsbManager
+import android.content.pm.PackageManager
 import android.util.Log
+import androidx.core.content.ContextCompat
 import com.sunmi.externalprinterlibrary2.ConnectCallback
 import com.sunmi.externalprinterlibrary2.SearchMethod
 import com.sunmi.externalprinterlibrary2.SunmiPrinterManager
@@ -728,7 +730,18 @@ class PrinterRepositoryImpl @Inject constructor(
             adapter?.bondedDevices?.any { it.address == mac } == true
         } catch (e: Exception) {
             Log.w("PRINTER_DEBUG", "BT bond check failed: ${e.message}")
-            // If bond state can't be read, allow the connection attempt to proceed.
+            // If bond state can't be read (usually missing permission), do NOT attempt connect.
+            false
+        }
+    }
+
+    override fun hasBtConnectPermission(): Boolean {
+        return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            ContextCompat.checkSelfPermission(
+                context,
+                android.Manifest.permission.BLUETOOTH_CONNECT
+            ) == PackageManager.PERMISSION_GRANTED
+        } else {
             true
         }
     }
