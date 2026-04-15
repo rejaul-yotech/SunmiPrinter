@@ -19,8 +19,10 @@ import com.yotech.valtprinter.domain.usecase.DisconnectPrinterUseCase
 import com.yotech.valtprinter.domain.usecase.PrintReceiptUseCase
 import com.yotech.valtprinter.domain.usecase.StartScanUseCase
 import com.yotech.valtprinter.domain.usecase.StopScanUseCase
+import com.yotech.valtprinter.ui.model.HardwareHubUiState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -30,6 +32,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -82,15 +85,23 @@ class PrinterViewModel @Inject constructor(
         .map { it is PrinterState.Error || it is PrinterState.Reconnecting }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
-    private val _isAlarmAcknowledged = MutableStateFlow(false)
-    val isAlarmAcknowledged: StateFlow<Boolean> = _isAlarmAcknowledged.asStateFlow()
+    private val _hardwareHubUiState = MutableStateFlow<HardwareHubUiState>(HardwareHubUiState.Hidden)
+    val hardwareHubUiState: StateFlow<HardwareHubUiState> = _hardwareHubUiState.asStateFlow()
+    private var autoCollapseJob: Job? = null
+    private var userInteractedWithHub = false
 
     // True when a USB printer device is physically plugged in
     private val _usbPresent = MutableStateFlow(false)
     val usbPresent: StateFlow<Boolean> = _usbPresent.asStateFlow()
 
-    fun expandHardwareHub() {
-        _isAlarmAcknowledged.value = false
+    fun onHubExpand() {
+        userInteractedWithHub = true
+        setHardwareHubUiState(HardwareHubUiState.Expanded)
+    }
+
+    fun onHubCollapse() {
+        userInteractedWithHub = true
+        setHardwareHubUiState(HardwareHubUiState.Collapsed)
     }
 
     init {
@@ -99,7 +110,7 @@ class PrinterViewModel @Inject constructor(
         viewModelScope.launch {
             isHardwareFault.collect { fault ->
                 if (fault) {
-                    _isAlarmAcknowledged.value = false
+                    // Hub state transitions are handled by the printerState collector below.
                 }
             }
         }
@@ -108,6 +119,7 @@ class PrinterViewModel @Inject constructor(
             printerState.collect { state ->
                 when (state) {
                     is PrinterState.Connected -> {
+                        val wasFault = _hardwareHubUiState.value != HardwareHubUiState.Hidden
                         // Determine BT bond status so we can warn the user if it was lost later
                         val isBonded =
                             if (state.device.connectionType == ConnectionType.BLUETOOTH) {
@@ -128,6 +140,18 @@ class PrinterViewModel @Inject constructor(
                             )
                         )
                         printerDataStore.setPreferredPrinterId(state.device.id)
+                        if (wasFault) {
+                            _uiEvents.tryEmit(PrinterUiEvent.ShowMessage("Back online"))
+                        }
+                        setHardwareHubUiState(HardwareHubUiState.Hidden)
+                    }
+
+                    is PrinterState.Error, is PrinterState.Reconnecting -> {
+                        if (_hardwareHubUiState.value == HardwareHubUiState.Hidden) {
+                            userInteractedWithHub = false
+                            setHardwareHubUiState(HardwareHubUiState.Expanded)
+                            scheduleAutoCollapse()
+                        }
                     }
 
                     else -> {}
@@ -167,8 +191,23 @@ class PrinterViewModel @Inject constructor(
         connectToPairedDevice(device)
     }
 
-    fun acknowledgeAlarm() {
-        _isAlarmAcknowledged.value = true
+    private fun scheduleAutoCollapse() {
+        autoCollapseJob?.cancel()
+        autoCollapseJob = viewModelScope.launch {
+            delay(2_500)
+            val stillFault = printerState.value is PrinterState.Error || printerState.value is PrinterState.Reconnecting
+            if (stillFault && !userInteractedWithHub) {
+                setHardwareHubUiState(HardwareHubUiState.Collapsed)
+            }
+        }
+    }
+
+    private fun setHardwareHubUiState(newState: HardwareHubUiState) {
+        if (newState == HardwareHubUiState.Hidden) {
+            autoCollapseJob?.cancel()
+            userInteractedWithHub = false
+        }
+        _hardwareHubUiState.value = newState
     }
 
     fun onUsbAttached() {
