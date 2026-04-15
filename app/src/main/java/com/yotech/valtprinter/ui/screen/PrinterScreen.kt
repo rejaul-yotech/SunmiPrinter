@@ -113,15 +113,7 @@ fun PrinterScreen(
     val isAlarmAcknowledged by viewModel.isAlarmAcknowledged.collectAsStateWithLifecycle()
     val recentJobs by viewModel.recentPrintJobs.collectAsStateWithLifecycle()
 
-    val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
-
-    // Collect snackbar messages from the ViewModel
-    LaunchedEffect(snackbarHostState) {
-        viewModel.snackbarMessage.collect { message ->
-            snackbarHostState.showSnackbar(message, duration = SnackbarDuration.Short)
-        }
-    }
 
     LaunchedEffect(isHardwareFault, isAlarmAcknowledged) {
         if (isHardwareFault && !isAlarmAcknowledged) {
@@ -213,14 +205,6 @@ fun PrinterScreen(
                 }
             }
         }
-
-        // Snackbar for connection feedback
-        SnackbarHost(
-            hostState = snackbarHostState,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .navigationBarsPadding()
-        )
 
         // Top-level Box layer: ELITE RESILIENCE HUB
         AnimatedVisibility(

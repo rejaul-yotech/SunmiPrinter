@@ -1,12 +1,13 @@
 package com.yotech.valtprinter.ui.viewmodel
 
 import android.graphics.Bitmap
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.yotech.valtprinter.data.local.dao.PairedDeviceDao
 import com.yotech.valtprinter.data.local.dao.PrintDao
-import com.yotech.valtprinter.data.local.entity.PairedDeviceEntity
 import com.yotech.valtprinter.data.local.datastore.PrinterDataStore
+import com.yotech.valtprinter.data.local.entity.PairedDeviceEntity
 import com.yotech.valtprinter.domain.model.ConnectionType
 import com.yotech.valtprinter.domain.model.PrintResult
 import com.yotech.valtprinter.domain.model.PrintStatus
@@ -75,13 +76,6 @@ class PrinterViewModel @Inject constructor(
     private val _usbPresent = MutableStateFlow(false)
     val usbPresent: StateFlow<Boolean> = _usbPresent.asStateFlow()
 
-    // One-shot messages surfaced as a Snackbar in the UI
-    private val _snackbarMessage = MutableSharedFlow<String>(
-        extraBufferCapacity = 1,
-        onBufferOverflow = BufferOverflow.DROP_OLDEST
-    )
-    val snackbarMessage: SharedFlow<String> = _snackbarMessage.asSharedFlow()
-
     fun expandHardwareHub() {
         _isAlarmAcknowledged.value = false
     }
@@ -102,12 +96,13 @@ class PrinterViewModel @Inject constructor(
                 when (state) {
                     is PrinterState.Connected -> {
                         // Determine BT bond status so we can warn the user if it was lost later
-                        val isBonded = if (state.device.connectionType == ConnectionType.BLUETOOTH) {
-                            val mac = state.device.id.removePrefix("BT-")
-                            repository.isBtDeviceBonded(mac)
-                        } else {
-                            true
-                        }
+                        val isBonded =
+                            if (state.device.connectionType == ConnectionType.BLUETOOTH) {
+                                val mac = state.device.id.removePrefix("BT-")
+                                repository.isBtDeviceBonded(mac)
+                            } else {
+                                true
+                            }
                         pairedDeviceDao.upsert(
                             PairedDeviceEntity(
                                 id = state.device.id,
@@ -119,13 +114,12 @@ class PrinterViewModel @Inject constructor(
                                 isBonded = isBonded
                             )
                         )
-                        _snackbarMessage.tryEmit("Connected to ${state.device.name}")
                     }
+
                     is PrinterState.Error -> {
-                        if (state.message == "Connect Failed") {
-                            _snackbarMessage.tryEmit("Could not connect — try scanning again")
-                        }
+                        Log.e("PrinterVM", state.message)
                     }
+
                     else -> {}
                 }
             }
@@ -174,12 +168,9 @@ class PrinterViewModel @Inject constructor(
             if (device.connectionType == "BLUETOOTH") {
                 val mac = device.id.removePrefix("BT-")
                 if (!repository.isBtDeviceBonded(mac)) {
-                    _snackbarMessage.tryEmit("Pair '${device.name}' in Bluetooth settings first, then try again.")
                     return@launch
                 }
             }
-
-            _snackbarMessage.tryEmit("Connecting to ${device.name}…")
 
             val domainDevice = PrinterDevice(
                 id = device.id,
@@ -193,7 +184,6 @@ class PrinterViewModel @Inject constructor(
             )
             val connected = repository.connectPairedDevice(domainDevice)
             if (!connected) {
-                _snackbarMessage.tryEmit("'${device.name}' not found nearby — scanning…")
                 startDiscovery()
             }
         }
