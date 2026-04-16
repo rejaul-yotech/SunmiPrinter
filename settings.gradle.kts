@@ -1,5 +1,3 @@
-import org.gradle.kotlin.dsl.flatDir
-
 pluginManagement {
     repositories {
         google {
@@ -19,14 +17,13 @@ plugins {
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
+        mavenLocal()
         google()
         mavenCentral()
-        flatDir {
-            dirs("libs")
-        }
     }
 }
 
 rootProject.name = "Valt Printer"
 include(":app")
+include(":sdk")
  
