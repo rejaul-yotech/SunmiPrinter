@@ -1,5 +1,3 @@
-import org.gradle.kotlin.dsl.flatDir
-
 pluginManagement {
     repositories {
         google {
@@ -19,14 +17,31 @@ plugins {
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
+        mavenLocal()
         google()
         mavenCentral()
-        flatDir {
-            dirs("libs")
+
+        // GitHub Packages — resolves com.yotech:valtprinter-sdk and com.sunmi:externalprinterlibrary2.
+        // Credentials read from ~/.gradle/gradle.properties (gpr.user / gpr.token)
+        // or environment variables GPR_USER / GPR_TOKEN.
+        val gprUser = providers.gradleProperty("gpr.user").orNull
+            ?: System.getenv("GPR_USER") ?: ""
+        val gprToken = providers.gradleProperty("gpr.token").orNull
+            ?: System.getenv("GPR_TOKEN") ?: ""
+        if (gprUser.isNotEmpty() && gprToken.isNotEmpty()) {
+            maven {
+                name = "GitHubPackages"
+                url  = uri("https://maven.pkg.github.com/rejaul-yotech/SunmiPrinter")
+                credentials {
+                    username = gprUser
+                    password = gprToken
+                }
+            }
         }
     }
 }
 
 rootProject.name = "Valt Printer"
 include(":app")
+include(":sdk")
  
