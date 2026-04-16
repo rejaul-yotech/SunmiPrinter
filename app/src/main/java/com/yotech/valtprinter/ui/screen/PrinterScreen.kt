@@ -140,11 +140,14 @@ fun PrinterScreen(
                         duration = SnackbarDuration.Short
                     )
                 }
+
                 PrinterViewModel.PrinterUiEvent.OpenBluetoothSettings -> {
-                    val intent = android.content.Intent(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS)
-                        .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                    val intent =
+                        android.content.Intent(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS)
+                            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
                     runCatching { context.startActivity(intent) }
                 }
+
                 PrinterViewModel.PrinterUiEvent.RequestBluetoothConnectPermission -> {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                         btPermissionLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT)
