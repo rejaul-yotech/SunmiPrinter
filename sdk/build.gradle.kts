@@ -52,20 +52,7 @@ afterEvaluate {
             }
         }
         repositories {
-            // Local file repo — for sharing .aar directly within the project
-            maven {
-                name = "LocalRepo"
-                url  = uri("${rootProject.layout.buildDirectory.get()}/repo")
-            }
-            // GitHub Packages — for distributing to epos, kds, etc.
-            maven {
-                name = "GitHubPackages"
-                url  = uri("https://maven.pkg.github.com/rejaul-yotech/SunmiPrinter")
-                credentials {
-                    username = providers.gradleProperty("gpr.user").orNull
-                    password = providers.gradleProperty("gpr.token").orNull
-                }
-            }
+            mavenLocal()
         }
     }
 }
