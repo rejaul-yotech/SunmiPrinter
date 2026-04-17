@@ -59,7 +59,7 @@ afterEvaluate {
 
 dependencies {
     // Sunmi SDK — published to Maven Local via ./gradlew publishSunmiToMavenLocal
-    implementation("com.sunmi:externalprinterlibrary2:1.0.14")
+    implementation(libs.externalprinterlibrary2)
 
     // Core
     implementation(libs.androidx.core.ktx)

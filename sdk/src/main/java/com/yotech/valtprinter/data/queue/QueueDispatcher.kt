@@ -9,6 +9,7 @@ import com.yotech.valtprinter.data.local.datastore.PrinterDataStore
 import com.yotech.valtprinter.data.local.entity.PrintStatus
 import com.yotech.valtprinter.domain.model.PrintResult
 import com.yotech.valtprinter.domain.repository.PrinterRepository
+import com.yotech.valtprinter.domain.repository.RenderRepository
 import kotlinx.coroutines.*
 
 /**
@@ -21,6 +22,7 @@ internal class QueueDispatcher(
     private val printDao: PrintDao,
     private val printerDataStore: PrinterDataStore,
     private val printerRepository: PrinterRepository,
+    private val renderRepository: RenderRepository,
     private val payloadParser: com.yotech.valtprinter.domain.util.PayloadParser,
     private val callbackManager: com.yotech.valtprinter.domain.util.PrinterCallbackManager
 ) {
@@ -56,7 +58,7 @@ internal class QueueDispatcher(
                     }
 
                     // 1. Initial State Check (Heuristics)
-                    val printer = printerRepository.getActiveCloudPrinter()
+                    val printer = renderRepository.getActiveCloudPrinter()
                     if (printer == null) {
                         NotificationHelper.updateNotification(serviceContext, "Error: Printer Not Connected", 1)
                         delay(5000)
@@ -90,7 +92,7 @@ internal class QueueDispatcher(
                         lastError = "Buffer init failed: ${initResult.reason}"
                     } else {
                         while (!isFinished && isActive) {
-                            val captureView = printerRepository.getCaptureView()
+                            val captureView = renderRepository.getCaptureView()
                             if (captureView == null) {
                                 lastError = "Capture View is null. UI not ready for headless rendering."
                                 break

@@ -22,6 +22,7 @@ import com.yotech.valtprinter.domain.model.PrintResult
 import com.yotech.valtprinter.domain.model.PrinterDevice
 import com.yotech.valtprinter.domain.model.PrinterState
 import com.yotech.valtprinter.domain.repository.PrinterRepository
+import com.yotech.valtprinter.domain.repository.RenderRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -40,12 +41,12 @@ import kotlin.coroutines.resume
 import kotlinx.coroutines.suspendCancellableCoroutine
 
 
-class PrinterRepositoryImpl constructor(
+class PrinterRepositoryImpl(
     private val context: Context,
     private val sdkPrintSource: SdkPrintSource,
     private val rawSocketPrintSource: RawSocketPrintSource,
     private val feedbackManager: FeedbackManager
-) : PrinterRepository {
+) : PrinterRepository, RenderRepository {
     private enum class RecoveryReason {
         SDK_DISCONNECT,
         HEARTBEAT_LOSS,
@@ -512,6 +513,10 @@ class PrinterRepositoryImpl constructor(
             btConsecutiveMisses = 0
         }
         return result
+    }
+
+    override fun isPrinterReady(): Boolean {
+        TODO("Not yet implemented")
     }
 
     override suspend fun initPrintJob(): PrintResult {

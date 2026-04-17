@@ -23,6 +23,7 @@ import com.yotech.valtprinter.data.worker.CleanupWorker
 import com.yotech.valtprinter.domain.model.PrinterDevice
 import com.yotech.valtprinter.domain.model.PrinterState
 import com.yotech.valtprinter.domain.repository.PrinterRepository
+import com.yotech.valtprinter.domain.repository.RenderRepository
 import com.yotech.valtprinter.domain.util.PayloadParser
 import com.yotech.valtprinter.domain.util.PrinterCallbackManager
 import com.yotech.valtprinter.core.util.FeedbackManager
@@ -71,6 +72,7 @@ class ValtPrinterSdk private constructor(app: Application) {
         printDao = printDao,
         printerDataStore = printerDataStore,
         printerRepository = repository,
+        renderRepository = repository,
         payloadParser = payloadParser,
         callbackManager = callbackManager
     )
