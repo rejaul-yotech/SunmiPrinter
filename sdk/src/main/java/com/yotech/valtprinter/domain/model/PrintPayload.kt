@@ -7,6 +7,8 @@ import com.yotech.valtprinter.domain.model.orderdata.BillingData
  */
 sealed class PrintPayload {
     data class Billing(val data: BillingData) : PrintPayload()
+
+    data class KitchenReceipt(val data: ReceiptData) : PrintPayload()
     data class RawText(val text: String) : PrintPayload()
     data class Unknown(val rawJson: String) : PrintPayload()
 }

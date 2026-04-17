@@ -71,7 +71,8 @@ internal class QueueDispatcher(
                     printDao.updateStatus(nextJob.id, PrintStatus.PROCESSING)
 
                     val logMessage = when (printPayload) {
-                        is com.yotech.valtprinter.domain.model.PrintPayload.Billing -> "Printing Order #${printPayload.data.orderId}"
+                        is com.yotech.valtprinter.domain.model.PrintPayload.Billing -> "Printing Billing Order #${printPayload.data.orderId}"
+                        is com.yotech.valtprinter.domain.model.PrintPayload.KitchenReceipt -> "Printing Kitchen Order #${printPayload.data.title}"
                         is com.yotech.valtprinter.domain.model.PrintPayload.RawText -> "Printing Raw Text Document"
                         is com.yotech.valtprinter.domain.model.PrintPayload.Unknown -> "Printing Unknown Payload Format"
                     }
@@ -105,7 +106,10 @@ internal class QueueDispatcher(
                             ) {
                                 when (printPayload) {
                                     is com.yotech.valtprinter.domain.model.PrintPayload.Billing -> {
-                                        com.yotech.valtprinter.ui.receipt.PosPrintingScreen(data = printPayload.data, isScrollEnabled = false)
+                                        com.yotech.valtprinter.ui.receipt.PosPrintingScreen(data = printPayload.data, isScrollEnabled = true)
+                                    }
+                                    is com.yotech.valtprinter.domain.model.PrintPayload.KitchenReceipt -> {
+                                        com.yotech.valtprinter.ui.receipt.KitchenReceipt(data = printPayload.data)
                                     }
                                     is com.yotech.valtprinter.domain.model.PrintPayload.RawText -> {
                                         com.yotech.valtprinter.ui.receipt.RawTextScreen(text = printPayload.text)

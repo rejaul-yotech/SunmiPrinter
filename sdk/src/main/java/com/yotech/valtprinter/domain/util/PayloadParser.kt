@@ -37,11 +37,12 @@ class PayloadParser constructor(
     }
 
     /**
-     * Serialise a [PrintPayload] into the on-disk JSON form that [parse] can round-trip.
+     * Serialize a [PrintPayload] into the on-disk JSON form that [parse] can round-trip.
      * The output is what gets stored in [PrintJobEntity.payloadJson].
      */
     fun serialize(payload: PrintPayload): String = when (payload) {
         is PrintPayload.Billing -> gson.toJson(payload.data)
+        is PrintPayload.KitchenReceipt -> gson.toJson(payload.data)
         is PrintPayload.RawText -> payload.text
         is PrintPayload.Unknown -> payload.rawJson
     }

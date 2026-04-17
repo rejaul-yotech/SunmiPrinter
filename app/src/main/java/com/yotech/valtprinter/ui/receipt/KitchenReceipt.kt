@@ -26,7 +26,7 @@ import androidx.compose.ui.unit.sp
 import com.yotech.valtprinter.domain.model.ReceiptData
 
 @Composable
-fun ReceiptTemplate(data: ReceiptData) {
+fun KitchenReceipt(data: ReceiptData) {
     // This Column is the actual "Paper" area. Width must be exactly 576 pixels for 80mm printer.
     // In Compose, dp is usually translated to pixels based on density.
     // However, our BitmapRenderer forces the view to be exactly 576 pixels wide.
@@ -97,8 +97,8 @@ fun ReceiptTemplate(data: ReceiptData) {
 
 @Preview(showBackground = true)
 @Composable
-fun ReceiptTemplatePreview() {
-    ReceiptTemplate(
+fun KitchenReceiptPreview() {
+    KitchenReceipt(
         data = ReceiptData(
             title = "ORDER #102",
             staffName = "Md. Rejaul Karim",
