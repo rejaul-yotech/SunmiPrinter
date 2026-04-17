@@ -3,6 +3,7 @@ package com.yotech.valtprinter.sdk
 import android.app.Application
 import android.content.Context
 import android.content.Intent
+import android.view.View
 import androidx.room.Room
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
@@ -10,23 +11,24 @@ import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import com.google.gson.Gson
+import com.yotech.valtprinter.core.util.FeedbackManager
+import com.yotech.valtprinter.core.util.SdkLogger
 import com.yotech.valtprinter.data.local.dao.PairedDeviceDao
 import com.yotech.valtprinter.data.local.dao.PrintDao
 import com.yotech.valtprinter.data.local.datastore.PrinterDataStore
 import com.yotech.valtprinter.data.local.db.PrinterDatabase
+import com.yotech.valtprinter.data.local.entity.PrintJobEntity
 import com.yotech.valtprinter.data.queue.QueueDispatcher
 import com.yotech.valtprinter.data.repository.PrinterRepositoryImpl
 import com.yotech.valtprinter.data.service.PrinterForegroundService
 import com.yotech.valtprinter.data.source.RawSocketPrintSource
 import com.yotech.valtprinter.data.source.SdkPrintSource
 import com.yotech.valtprinter.data.worker.CleanupWorker
+import com.yotech.valtprinter.domain.model.PrintPayload
 import com.yotech.valtprinter.domain.model.PrinterDevice
 import com.yotech.valtprinter.domain.model.PrinterState
-import com.yotech.valtprinter.domain.repository.PrinterRepository
-import com.yotech.valtprinter.domain.repository.RenderRepository
 import com.yotech.valtprinter.domain.util.PayloadParser
 import com.yotech.valtprinter.domain.util.PrinterCallbackManager
-import com.yotech.valtprinter.core.util.FeedbackManager
 import kotlinx.coroutines.flow.StateFlow
 import java.util.concurrent.TimeUnit
 
@@ -78,6 +80,11 @@ class ValtPrinterSdk private constructor(app: Application) {
     )
 
     // ── Public API ───────────────────────────────────────────────────────────
+    //
+    // The SDK intentionally exposes a flat, narrow surface — host apps must NOT receive
+    // a reference to the underlying [PrinterRepository] composite, because doing so leaks
+    // internal sub-interfaces (RenderRepository, PrintJobRepository) and makes Law-of-Demeter
+    // violations inevitable. Every public capability gets its own delegating method below.
 
     /** Live printer connection state. Observe in the host app to update UI. */
     val printerState: StateFlow<PrinterState> = repository.printerState
@@ -85,8 +92,7 @@ class ValtPrinterSdk private constructor(app: Application) {
     /** Discovered printers during an active scan. */
     val discoveredDevices: StateFlow<List<PrinterDevice>> = repository.discoveredDevices
 
-    /** The underlying [PrinterRepository] for advanced use cases. */
-    val printerRepository: PrinterRepository = repository
+    // ── Discovery & connection ───────────────────────────────────────────────
 
     /** Start scanning for nearby printers (Bluetooth, USB, LAN). */
     fun startScan() = repository.startScan()
@@ -94,8 +100,83 @@ class ValtPrinterSdk private constructor(app: Application) {
     /** Stop any active scan. */
     fun stopScan() = repository.stopScan()
 
+    /** Connect to a previously-discovered [device]. */
+    suspend fun connect(device: PrinterDevice) = repository.connect(device)
+
+    /**
+     * Reconnect to a previously-paired [device] that may not currently be in the
+     * discovered-devices list. Returns true when the connection attempt was launched.
+     */
+    suspend fun connectPairedDevice(device: PrinterDevice): Boolean =
+        repository.connectPairedDevice(device)
+
+    /** Best-effort one-shot USB auto-connect. Returns true when a USB printer was found. */
+    suspend fun autoConnectUsb(): Boolean = repository.autoConnectUsb()
+
     /** Disconnect from the currently connected printer. */
     fun disconnect() = repository.disconnect()
+
+    // ── Hardware & permission probes ─────────────────────────────────────────
+
+    /** True if any USB device is currently attached. */
+    fun isUsbPrinterPresent(): Boolean = repository.isUsbPrinterPresent()
+
+    /** True if the Bluetooth device identified by [mac] is paired with this Android device. */
+    fun isBtDeviceBonded(mac: String): Boolean = repository.isBtDeviceBonded(mac)
+
+    /**
+     * True if the app holds [android.Manifest.permission.BLUETOOTH_CONNECT].
+     * Always true on API < 31.
+     */
+    fun hasBtConnectPermission(): Boolean = repository.hasBtConnectPermission()
+
+    // ── Headless rendering plumbing ──────────────────────────────────────────
+
+    /**
+     * Register the off-screen [view] that the SDK will use to render receipts to bitmap.
+     * The SDK holds [view] through a [java.lang.ref.WeakReference] — the host MUST still
+     * call [clearCaptureView] when the owning component is destroyed to release rendering
+     * pipeline state deterministically.
+     */
+    fun setCaptureView(view: View) = repository.setCaptureView(view)
+
+    /** Drop the current capture view registration. Idempotent. */
+    fun clearCaptureView() = repository.clearCaptureView()
+
+    // ── Job submission ───────────────────────────────────────────────────────
+
+    /**
+     * Enqueue a print job. The SDK persists the payload, returns immediately, and the
+     * background queue dispatcher prints it as soon as a connected printer is available.
+     *
+     * @param payload  the typed receipt payload to print.
+     * @param externalJobId  caller-supplied idempotency key. Submitting twice with the same
+     *                       id is a no-op — the second call returns [SubmitResult.Duplicate].
+     * @param isPriority  true to float this job to the head of the queue.
+     */
+    suspend fun submitPrintJob(
+        payload: PrintPayload,
+        externalJobId: String,
+        isPriority: Boolean = false
+    ): SubmitResult {
+        return try {
+            val entity = PrintJobEntity(
+                externalJobId = externalJobId,
+                payloadJson = payloadParser.serialize(payload),
+                isPriority = isPriority
+            )
+            val rowId = printDao.insertPrintJob(entity)
+            if (rowId == -1L) SubmitResult.Duplicate(externalJobId)
+            else SubmitResult.Enqueued(externalJobId)
+        } catch (ce: kotlinx.coroutines.CancellationException) {
+            throw ce
+        } catch (t: Throwable) {
+            SdkLogger.e("VALT_SUBMIT", "submitPrintJob failed for id=$externalJobId", t)
+            SubmitResult.Failure(t.message ?: "Unknown persistence error")
+        }
+    }
+
+    // ── Callbacks ────────────────────────────────────────────────────────────
 
     /**
      * Register a [PrintJobCallback] to receive job success/failure events.

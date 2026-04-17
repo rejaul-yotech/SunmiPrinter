@@ -57,9 +57,8 @@ internal class QueueDispatcher(
                         continue
                     }
 
-                    // 1. Initial State Check (Heuristics)
-                    val printer = renderRepository.getActiveCloudPrinter()
-                    if (printer == null) {
+                    // 1. Initial State Check — abstract readiness probe; no Sunmi types leak here.
+                    if (!printerRepository.isPrinterReady()) {
                         NotificationHelper.updateNotification(serviceContext, "Error: Printer Not Connected", 1)
                         delay(5000)
                         continue

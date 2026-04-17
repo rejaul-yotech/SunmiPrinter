@@ -12,6 +12,7 @@ import com.sunmi.externalprinterlibrary2.SunmiPrinterManager
 import com.sunmi.externalprinterlibrary2.printer.CloudPrinter
 import com.sunmi.externalprinterlibrary2.style.EncodeType
 import com.yotech.valtprinter.core.util.FeedbackManager
+import com.yotech.valtprinter.core.util.SdkLogger
 import com.yotech.valtprinter.data.mapper.toDomain
 import com.yotech.valtprinter.data.model.DiscoveredPrinter
 import com.yotech.valtprinter.data.model.DiscoveryMode
@@ -144,7 +145,10 @@ class PrinterRepositoryImpl(
         // Map to domain object and update state flow
         val domainList = internalPrintersMap.values.map { it.toDomain() }
         _discoveredDevices.value = domainList
-        Log.d("PRINTER_DEBUG", "Found/Updated $mode Device: $uniqueId | IP: ${info.address}")
+        SdkLogger.d(
+            "PRINTER_DEBUG",
+            "Found/Updated $mode Device: ${SdkLogger.redactDeviceId(uniqueId)} | IP: ${SdkLogger.redactIp(info.address)}"
+        )
     }
 
     override suspend fun connect(device: PrinterDevice) {
@@ -169,7 +173,7 @@ class PrinterRepositoryImpl(
         cloudPrinter.connect(context, object : ConnectCallback {
             override fun onConnect() {
                 if (connectAttemptId != activeConnectAttemptId) {
-                    Log.w("PRINTER_DEBUG", "Ignoring stale onConnect for ${device.id} (attempt=$connectAttemptId)")
+                    SdkLogger.w("PRINTER_DEBUG", "Ignoring stale onConnect for ${SdkLogger.redactDeviceId(device.id)} (attempt=$connectAttemptId)")
                     return
                 }
                 isConnecting = false
@@ -192,13 +196,13 @@ class PrinterRepositoryImpl(
 
             override fun onFailed(err: String?) {
                 if (connectAttemptId != activeConnectAttemptId) {
-                    Log.w("PRINTER_DEBUG", "Ignoring stale onFailed for ${device.id} (attempt=$connectAttemptId): $err")
+                    SdkLogger.w("PRINTER_DEBUG", "Ignoring stale onFailed for ${SdkLogger.redactDeviceId(device.id)} (attempt=$connectAttemptId): $err")
                     return
                 }
                 isConnecting = false
                 // If already connected, never let a delayed failure callback overwrite success state.
                 if (connectedDevice?.id == device.id && activeCloudPrinter != null) {
-                    Log.w("PRINTER_DEBUG", "Ignoring late onFailed after active connection for ${device.id}: $err")
+                    SdkLogger.w("PRINTER_DEBUG", "Ignoring late onFailed after active connection for ${SdkLogger.redactDeviceId(device.id)}: $err")
                     return
                 }
                 // Only show error UI if we aren't in a silent recovery loop
@@ -211,7 +215,7 @@ class PrinterRepositoryImpl(
 
             override fun onDisConnect() {
                 if (connectAttemptId != activeConnectAttemptId) {
-                    Log.w("PRINTER_DEBUG", "Ignoring stale onDisConnect for ${device.id} (attempt=$connectAttemptId)")
+                    SdkLogger.w("PRINTER_DEBUG", "Ignoring stale onDisConnect for ${SdkLogger.redactDeviceId(device.id)} (attempt=$connectAttemptId)")
                     return
                 }
                 stopHeartbeat()
@@ -286,7 +290,10 @@ class PrinterRepositoryImpl(
         val now = System.currentTimeMillis()
         val sameDevice = activeRecoveryDeviceId == device.id
         if (isRecovering && sameDevice) {
-            Log.d("RESILIENCE_HUB", "Recovery already active for ${device.id}. Ignoring duplicate trigger: $reason ($details)")
+            SdkLogger.d(
+                "RESILIENCE_HUB",
+                "Recovery already active for ${SdkLogger.redactDeviceId(device.id)}. Ignoring duplicate trigger: $reason ($details)"
+            )
             return
         }
         val cooldownMs = 1200L
@@ -323,7 +330,10 @@ class PrinterRepositoryImpl(
             var attempts = 0
             var connectScheduled = false
             val aggressiveLimit = 30 // First 60 seconds (30 attempts * 2s)
-            Log.i("RESILIENCE_HUB", "Recovery session $sessionId started. reason=$reason details=$details device=${device.id}")
+            SdkLogger.i(
+                "RESILIENCE_HUB",
+                "Recovery session $sessionId started. reason=$reason details=$details device=${SdkLogger.redactDeviceId(device.id)}"
+            )
 
             while (isActive) {
                 attempts++
@@ -441,14 +451,18 @@ class PrinterRepositoryImpl(
         return foundUsb
     }
 
-    private var captureView: android.view.View? = null
+    // Hold the host's capture view through a WeakReference so a forgotten clear()
+    // cannot leak the entire activity tree once the host destroys the screen.
+    private var captureViewRef: java.lang.ref.WeakReference<android.view.View>? = null
 
-    override fun getActiveCloudPrinter(): CloudPrinter? = activeCloudPrinter
-
-    override fun getCaptureView(): android.view.View? = captureView
+    override fun getCaptureView(): android.view.View? = captureViewRef?.get()
 
     override fun setCaptureView(view: android.view.View) {
-        this.captureView = view
+        this.captureViewRef = java.lang.ref.WeakReference(view)
+    }
+
+    override fun clearCaptureView() {
+        this.captureViewRef = null
     }
 
     override suspend fun printChunk(bitmap: Bitmap, isLastChunk: Boolean): PrintResult {
@@ -515,9 +529,14 @@ class PrinterRepositoryImpl(
         return result
     }
 
-    override fun isPrinterReady(): Boolean {
-        TODO("Not yet implemented")
-    }
+    /**
+     * True only when the SDK believes the printer is fully ready to accept data:
+     * an active [CloudPrinter] handle exists AND the domain device record is still set.
+     * Both must be true — a dangling [CloudPrinter] without a device usually indicates
+     * the connection is mid-teardown.
+     */
+    override fun isPrinterReady(): Boolean =
+        activeCloudPrinter != null && connectedDevice != null
 
     override suspend fun initPrintJob(): PrintResult {
         val printer = activeCloudPrinter ?: return PrintResult.Failure("Not connected")
@@ -564,7 +583,7 @@ class PrinterRepositoryImpl(
                 val isStillConnected = checkPhysicalConnection(device)
 
                 if (!isStillConnected) {
-                    Log.w("VITALITY", "Heartbeat lost for ${device.name}")
+                    SdkLogger.w("VITALITY", "Heartbeat lost for ${SdkLogger.redactDeviceName(device.name)}")
                     withContext(Dispatchers.Main) {
                         feedbackManager.emitGracefulWarning() // Haptic Pulse
                         requestRecovery(
@@ -601,7 +620,10 @@ class PrinterRepositoryImpl(
                 //
                 // The correct pattern: trust the SDK's onDisConnect() callback.
                 // It fires reliably when the LAN link truly drops (cable pull, power off, etc.).
-                Log.d("VITALITY", "LAN heartbeat: trusting SDK session for ${device.address}")
+                SdkLogger.d(
+                    "VITALITY",
+                    "LAN heartbeat: trusting SDK session for ${SdkLogger.redactIp(device.address)}"
+                )
                 true
             }
 
@@ -641,7 +663,7 @@ class PrinterRepositoryImpl(
         if (confirmedHit) {
             btConsecutiveMisses = 0
             lastBtConfirmedHitMs = now
-            Log.d("VITALITY", "BT heartbeat probe confirmed for ${device.name}")
+            SdkLogger.d("VITALITY", "BT heartbeat probe confirmed for ${SdkLogger.redactDeviceName(device.name)}")
             return true
         }
 
@@ -651,9 +673,9 @@ class PrinterRepositoryImpl(
         // - no positive hit for at least 10 seconds.
         val staleForMs = now - lastBtConfirmedHitMs
         val hardDisconnect = btConsecutiveMisses >= 3 && staleForMs >= 10_000L
-        Log.w(
+        SdkLogger.w(
             "VITALITY",
-            "BT probe miss ${btConsecutiveMisses}/3 for ${device.name} (staleForMs=$staleForMs hardDisconnect=$hardDisconnect)"
+            "BT probe miss ${btConsecutiveMisses}/3 for ${SdkLogger.redactDeviceName(device.name)} (staleForMs=$staleForMs hardDisconnect=$hardDisconnect)"
         )
         return !hardDisconnect
     }
