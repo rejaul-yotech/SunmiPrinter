@@ -219,7 +219,6 @@ fun PosPrintingScreenPreview() {
             // Restaurant Identity (Dishoom Kensington)
             restaurantName = "Dishoom Kensington",
             restaurantPhone = "+44 20 7420 9325",
-            logoResId = Icons.Default.Coffee, // R.drawable.ic_dishoom_logo
 
             // Address Information (Official UK Format)
             addressLine1 = "4 Derry Street",

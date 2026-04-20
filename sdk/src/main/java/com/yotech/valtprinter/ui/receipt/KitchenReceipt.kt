@@ -103,7 +103,6 @@ fun KitchenReceiptPreview() {
             title = "ORDER #102",
             staffName = "Md. Rejaul Karim",
             restaurantName = "Dishoom Kensington",
-            logoResId = Icons.Default.Coffee,
             items = listOf("1x Burger", "2x Fries", "1x Coke")
         )
     )

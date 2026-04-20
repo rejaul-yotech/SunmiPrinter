@@ -1,16 +1,26 @@
 package com.yotech.valtprinter.domain.model.orderdata
 
-import androidx.compose.ui.graphics.vector.ImageVector
-
 /**
  * The primary data contract for the Valt KD billing and printing system.
  * Example: Dishoom Kensington, 4 Derry St, LONDON W8 5SE, UK.
+ *
+ * ## Why no logo field
+ *
+ * This model crosses a JSON serialization boundary (the print job is persisted to
+ * Room as a JSON string before the dispatcher renders it). Compose-runtime types
+ * such as `androidx.compose.ui.graphics.vector.ImageVector` cannot round-trip
+ * through Gson — `ImageVector` has no public constructor, so `fromJson` either
+ * throws or produces a half-built instance that NPEs at render time. A previous
+ * `logoResId: ImageVector` field is removed for that reason.
+ *
+ * If a host needs a brand logo on the receipt, register it as a render-time
+ * resource via the host's composable (e.g. an `Image(painterResource(R.drawable.logo))`
+ * inside a custom screen) rather than encoding it into the persisted payload.
  */
 data class BillingData(
     // --- Restaurant Identity ---
     val restaurantName: String, // "Dishoom Kensington"
     val restaurantPhone: String, // "+44 20 7420 9325"
-    val logoResId: ImageVector, // R.drawable.ic_dishoom_logo
 
     // --- Address Information (UK Standard) ---
     val addressLine1: String, // "4 Derry Street"
