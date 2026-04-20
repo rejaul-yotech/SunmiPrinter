@@ -790,7 +790,11 @@ class PrinterRepositoryImpl(
 
     override fun isUsbPrinterPresent(): Boolean {
         val usbManager = context.getSystemService(Context.USB_SERVICE) as? UsbManager
-        return usbManager?.deviceList?.isNotEmpty() == true
+        val devices = usbManager?.deviceList?.values ?: return false
+        
+        return devices.any { device ->
+            device.deviceClass == USB_CLASS_PRINTER || device.vendorId == VID_STMICRO
+        }
     }
 
     @android.annotation.SuppressLint("MissingPermission")
@@ -891,7 +895,22 @@ class PrinterRepositoryImpl(
         }
 
         _printerState.value = PrinterState.AutoConnecting
-        return autoConnectUsb()
+        val success = autoConnectUsb()
+        
+        // BOUNCE-BACK: If USB promotion failed (e.g. device filter missed or scan failed),
+        // immediately trigger recovery for the displaced printer so we don't stay Idle.
+        if (!success && preferredFallbackDevice != null) {
+            val fallback = preferredFallbackDevice!!
+            preferredFallbackDevice = null
+            Log.w("PRINTER_DEBUG", "USB promotion failed; bouncing back to ${fallback.connectionType}")
+            requestRecovery(
+                device = fallback,
+                reason = RecoveryReason.SDK_DISCONNECT,
+                details = "USB auto-connect failed; reverting to preferred fallback"
+            )
+        }
+        
+        return success
     }
 
     override suspend fun onUsbDetached() {
@@ -908,5 +927,10 @@ class PrinterRepositoryImpl(
                 details = "USB detached; falling back to ${fallback.connectionType}"
             )
         }
+    }
+
+    private companion object {
+        const val USB_CLASS_PRINTER = 7
+        const val VID_STMICRO = 1155 // 0x0483
     }
 }

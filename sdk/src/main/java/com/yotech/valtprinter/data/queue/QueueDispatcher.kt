@@ -27,7 +27,7 @@ internal class QueueDispatcher(
     private val callbackManager: com.yotech.valtprinter.domain.util.PrinterCallbackManager
 ) {
 
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var dispatcherJob: Job? = null
     private var stateMonitorJob: Job? = null
     private val CHUNK_SIZE_PX = 400 // Atomic slice height for persistence

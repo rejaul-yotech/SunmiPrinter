@@ -7,6 +7,7 @@ import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import android.util.Log
 import com.yotech.valtprinter.domain.repository.PrinterRepository
+import com.yotech.valtprinter.sdk.ValtPrinterSdk
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
@@ -41,10 +42,7 @@ import kotlinx.coroutines.launch
  * `res/xml/device_filter.xml` (USB Printer class 7, plus the STMicro VID 0x0483
  * used by Sunmi USB control firmware). Anything else is ignored.
  */
-internal class UsbAttachReceiver(
-    private val repository: PrinterRepository,
-    private val scope: CoroutineScope
-) : BroadcastReceiver() {
+internal class UsbAttachReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         val device = intent.getParcelableExtra<UsbDevice>(UsbManager.EXTRA_DEVICE) ?: run {
@@ -56,6 +54,14 @@ internal class UsbAttachReceiver(
             Log.d(TAG, "Ignoring non-printer USB device vid=${device.vendorId} pid=${device.productId}")
             return
         }
+
+        // Resolve dependencies via SDK singleton for manifest-declared instantiation
+        val sdk = try { ValtPrinterSdk.get() } catch (e: Exception) {
+            Log.e(TAG, "SDK not initialized during USB event", e)
+            return
+        }
+        val repository = sdk.printerRepository
+        val scope = sdk.queueDispatcher.scope
 
         when (intent.action) {
             UsbManager.ACTION_USB_DEVICE_ATTACHED -> {
