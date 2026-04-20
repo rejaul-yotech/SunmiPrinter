@@ -107,8 +107,7 @@ internal class QueueDispatcher(
                                 when (printPayload) {
                                     is com.yotech.valtprinter.domain.model.PrintPayload.Billing -> {
                                         com.yotech.valtprinter.ui.receipt.PosPrintingScreen(
-                                            data = printPayload.data,
-                                            isScrollEnabled = true
+                                            data = printPayload.data
                                         )
                                     }
                                     is com.yotech.valtprinter.domain.model.PrintPayload.KitchenReceipt -> {

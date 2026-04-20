@@ -10,8 +10,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Coffee
 import androidx.compose.material3.HorizontalDivider
@@ -33,10 +31,17 @@ import com.yotech.valtprinter.domain.model.orderdata.OrderItem
 import com.yotech.valtprinter.domain.model.orderdata.SubOrderItem
 import java.util.Locale
 
+/**
+ * Receipt composable rendered by the SDK's headless [BitmapRenderer]. Must NOT
+ * apply `Modifier.verticalScroll` here — the renderer measures with
+ * `MeasureSpec.UNSPECIFIED` height, and verticalScroll inside infinite height
+ * constraints throws `IllegalStateException`. Hosts that want to preview the
+ * receipt on screen should wrap this composable in their own scrolling
+ * container at the call site.
+ */
 @Composable
 fun PosPrintingScreen(
-    data: BillingData,
-    isScrollEnabled: Boolean = true
+    data: BillingData
 ) {
     // Grouping items by category for the "Premium Receipt" look!
     val groupedItems = remember(data.items) {
@@ -51,19 +56,10 @@ fun PosPrintingScreen(
         )
     }
 
-    val scrollState = if (isScrollEnabled) rememberScrollState() else null
-
     Column(
         modifier = Modifier
             .width(576.dp)
             .background(Color.White)
-            .then(
-                if (isScrollEnabled && scrollState != null) {
-                    Modifier.verticalScroll(scrollState)
-                } else {
-                    Modifier
-                }
-            )
             .padding(vertical = 24.dp, horizontal = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
