@@ -4,83 +4,170 @@ import android.graphics.Bitmap
 import android.util.Log
 import com.yotech.valtprinter.domain.model.PrintResult
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.OutputStream
 import java.net.InetSocketAddress
 import java.net.Socket
 
+/**
+ * Raw ESC/POS socket transport for LAN-attached Sunmi printers.
+ *
+ * ## Atomicity model
+ *
+ * A LAN print job is a *single* TCP session that spans the entire receipt:
+ *
+ * ```
+ *   openJob()       ──► writes ESC/POS preamble (alignment, margins, line spacing,
+ *                       backfeed, printable width). NO image, NO cut.
+ *
+ *   appendChunk()   ──► repeatedly writes raster image bytes (GS v 0).
+ *                       May be called many times. NO cut.
+ *
+ *   commitAndCut()  ──► writes feed (ESC J 96) + partial cut (GS V 1),
+ *                       flushes, closes the socket. EXACTLY ONE cut per job.
+ * ```
+ *
+ * This mirrors the USB/BT transaction model in [SdkPrintSource]:
+ * `initBuffer → addToBuffer × N → commitAndCut`.
+ *
+ * ## Why this replaces the old per-call cut design
+ *
+ * The previous implementation appended `ESC J 96` + `GS V 1` at the end of every
+ * `printBitmap()` call. When the [com.yotech.valtprinter.data.queue.QueueDispatcher]
+ * loop drove that source once per 400-px slice, the printer cut paper between
+ * slices, producing a strip of mini-receipts instead of one continuous receipt.
+ * Splitting the cut from the chunk write fixes that bug without sacrificing the
+ * per-chunk DB checkpointing the queue relies on for resilience.
+ *
+ * ## Failure semantics
+ *
+ * If any socket write fails, the [Session] is closed and a [PrintResult.Failure]
+ * is returned. A LAN job CANNOT be resumed mid-stream — the printer has already
+ * advanced through whatever bytes arrived before the drop. Callers must treat any
+ * LAN failure inside a job as "full reprint required" (chunk index reset to 0)
+ * on the next attempt.
+ */
+class RawSocketPrintSource {
 
-class RawSocketPrintSource constructor() {
-    private val mutex = Mutex()
+    /**
+     * A live LAN print job. Owns one TCP socket, one [OutputStream], and a one-shot
+     * `closed` flag. Created by [openJob], terminated by [commitAndCut] (success
+     * path) or by [appendChunk] / [commitAndCut] on any I/O error.
+     */
+    class Session internal constructor(
+        internal val socket: Socket,
+        internal val out: OutputStream
+    ) {
+        @Volatile internal var closed: Boolean = false
 
-    suspend fun printBitmap(ip: String, port: Int, bitmap: Bitmap): PrintResult =
-        mutex.withLock {
-            withContext(Dispatchers.IO) {
-                var socket: Socket? = null
-                try {
-                    socket = Socket()
-                    socket.connect(InetSocketAddress(ip, port.takeIf { it > 0 } ?: 9100), 4000)
-                    val out: OutputStream = socket.getOutputStream()
+        internal fun closeQuietly() {
+            if (closed) return
+            closed = true
+            try { out.flush() } catch (_: Exception) {}
+            try { socket.close() } catch (_: Exception) {}
+        }
+    }
 
-                    // 1. Skip ESC @ (Initialize) to avoid firmware-default paper feed
-                    // We manually set all parameters below instead of a full reset.
+    /**
+     * Opens a TCP session and writes the pre-image ESC/POS preamble.
+     * Returns the live [Session] on success, or [OpenResult.Failure] on any
+     * connect/write error (the partial socket is closed before returning).
+     *
+     * `port <= 0` is normalised to the standard ESC/POS port `9100`.
+     */
+    suspend fun openJob(ip: String, port: Int): OpenResult = withContext(Dispatchers.IO) {
+        var socket: Socket? = null
+        try {
+            socket = Socket().apply {
+                connect(InetSocketAddress(ip, port.takeIf { it > 0 } ?: 9100), 4000)
+            }
+            val out = socket.getOutputStream()
 
-                    // 2. Set Alignment Left (Mirror Mode)
-                    // This ensures the 576-dot bitmap aligns 1:1 with the print head.
-                    out.write(byteArrayOf(0x1B, 0x61, 0x00))
+            // ───── Pre-image ESC/POS preamble ─────────────────────────────
+            // Intentionally skipping ESC @ (Initialize) to avoid the firmware-default
+            // top feed — every relevant register is set manually below.
 
-                    // 2.0.1 [Absolute Edge] Enable Auto-Backfeed via GS ( K
-                    // GS ( K <pL> <pH> <m> <n> -> 0x1D 0x28 0x4B 0x02 0x00 0x02 0x02
-                    out.write(byteArrayOf(0x1D, 0x28, 0x4B, 0x02, 0x00, 0x02, 0x02))
+            // Alignment LEFT — aligns the 576-dot bitmap 1:1 with the head
+            out.write(byteArrayOf(0x1B, 0x61, 0x00))
 
-                    // 2.0.2 [Absolute Edge] Manual Backfeed attempt (Uppercase K)
-                    // ESC K n -> 96 dots = 12mm.
-                    out.write(byteArrayOf(0x1B, 0x4B, 0x60)) // 0x60 = 96
+            // Enable auto-backfeed: GS ( K pL pH m n
+            out.write(byteArrayOf(0x1D, 0x28, 0x4B, 0x02, 0x00, 0x02, 0x02))
 
-                    // 2.1 Set Line Spacing to 0 (to avoid vertical gaps between graphics/text)
-                    out.write(byteArrayOf(0x1B, 0x33, 0x00))
+            // Manual backfeed 96 dots (12 mm): ESC K n — pulls paper back so the
+            // first pixel prints flush with the previous cut edge.
+            out.write(byteArrayOf(0x1B, 0x4B, 0x60))
 
-                    // 2.2 Set Left Margin to 0
-                    out.write(byteArrayOf(0x1D, 0x4C, 0x00, 0x00))
+            // Line spacing = 0 (avoid blank dots between successive raster blocks)
+            out.write(byteArrayOf(0x1B, 0x33, 0x00))
 
-                    // 2.3 Set Printable Area Width to 576 dots (standard 80mm)
-                    // 576 = 0x40 (64) + 0x02 (2) * 256
-                    out.write(byteArrayOf(0x1D, 0x57, 0x40, 0x02))
+            // Left margin = 0
+            out.write(byteArrayOf(0x1D, 0x4C, 0x00, 0x00))
 
-                    // 2.4 [Absolute Edge] Set Top Margin to 0 explicitly
-                    // GS L nL nH -> Set left/top relative position to 0
-                    out.write(byteArrayOf(0x1D, 0x4C, 0x00, 0x00))
+            // Printable area width = 576 dots (standard 80 mm head)
+            out.write(byteArrayOf(0x1D, 0x57, 0x40, 0x02))
 
-                    // 3. Print Image using GS v 0
-                    val imageData = decodeBitmapToEscPos(bitmap)
-                    out.write(imageData)
+            // Top margin = 0 (GS L 0 0 — restated for the top register)
+            out.write(byteArrayOf(0x1D, 0x4C, 0x00, 0x00))
 
-                    // 4. Cut Paper (Safe Tight Mode)
-                    // ESC J n -> Feed n dots forward. 96 dots = 12mm.
-                    // Restored to 96 dots for safer cutting and top/bottom symmetry.
-                    out.write(byteArrayOf(0x1B, 0x4A, 0x60)) // 96 dots = 0x60
+            out.flush()
+            OpenResult.Ok(Session(socket, out))
+        } catch (e: Exception) {
+            try { socket?.close() } catch (_: Exception) {}
+            val msg = "Socket Open Error: ${e.message}"
+            Log.e("RAW_SOCKET", msg, e)
+            OpenResult.Failure(msg)
+        }
+    }
 
-                    // GS V 1 -> Partial Cut without additional feeding
-                    out.write(byteArrayOf(0x1D, 0x56, 0x01))
-
-                    out.flush()
-                    PrintResult.Success
-                } catch (e: Exception) {
-                    val errorMsg = "Socket Socket Error: ${e.message}"
-                    Log.e("RAW_SOCKET", errorMsg, e)
-                    PrintResult.Failure(errorMsg)
-                } finally {
-                    socket?.close()
-                }
+    /**
+     * Streams one bitmap chunk into the open [session] as a `GS v 0` raster block.
+     * Does NOT cut. Closes the session on I/O error.
+     */
+    suspend fun appendChunk(session: Session, bitmap: Bitmap): PrintResult =
+        withContext(Dispatchers.IO) {
+            if (session.closed) return@withContext PrintResult.Failure("LAN session already closed")
+            try {
+                val imageData = decodeBitmapToEscPos(bitmap)
+                session.out.write(imageData)
+                session.out.flush()
+                PrintResult.Success
+            } catch (e: Exception) {
+                session.closeQuietly()
+                val msg = "Socket Chunk Error: ${e.message}"
+                Log.e("RAW_SOCKET", msg, e)
+                PrintResult.Failure(msg)
             }
         }
 
     /**
+     * Writes the final feed + partial cut, flushes, and closes the [session].
+     * After this call the session is unusable. Idempotent — calling on an
+     * already-closed session returns [PrintResult.Failure] without side effects.
+     */
+    suspend fun commitAndCut(session: Session): PrintResult = withContext(Dispatchers.IO) {
+        if (session.closed) {
+            return@withContext PrintResult.Failure("LAN session closed before cut")
+        }
+        try {
+            // ESC J 96 — feed 96 dots (12 mm) past the printed area so the cutter
+            // blade clears the last printed line.
+            session.out.write(byteArrayOf(0x1B, 0x4A, 0x60))
+            // GS V 1 — partial cut without additional feeding.
+            session.out.write(byteArrayOf(0x1D, 0x56, 0x01))
+            session.out.flush()
+            PrintResult.Success
+        } catch (e: Exception) {
+            val msg = "Socket Cut Error: ${e.message}"
+            Log.e("RAW_SOCKET", msg, e)
+            PrintResult.Failure(msg)
+        } finally {
+            session.closeQuietly()
+        }
+    }
+
+    /**
      * Decodes a Bitmap into the standard ESC/POS GS v 0 raster image format.
-     * [Tight 2D Trim]: Calculates the absolute bounding box (minX, maxX, minY, maxY)
-     * with zero buffer for absolute minimum white space.
+     * No trimming — the Compose padding is reproduced 1:1 on paper.
      */
     private fun decodeBitmapToEscPos(bmp: Bitmap): ByteArray {
         val fullWidth = bmp.width
@@ -89,14 +176,11 @@ class RawSocketPrintSource constructor() {
         val pixels = IntArray(fullWidth * fullHeight)
         bmp.getPixels(pixels, 0, fullWidth, 0, 0, fullWidth, fullHeight)
 
-        // 1. [Mirror Mode] Disable all trimming.
-        // This ensures the padding in Compose is reflected identically on paper.
         val minX = 0
         val maxX = fullWidth - 1
         val minY = 0
         val maxY = fullHeight - 1
 
-        // 2. Absolute Tight Dimensions
         val trimmedWidth = maxX - minX + 1
         val trimmedHeight = maxY - minY + 1
 
@@ -109,7 +193,6 @@ class RawSocketPrintSource constructor() {
         val command = byteArrayOf(0x1D, 0x76, 0x30, 0x00, xL, xH, yL, yH)
         val data = ByteArray(bytesPerLine * trimmedHeight)
 
-        // 3. Rasterize only the detected bounding box
         for (y in 0 until trimmedHeight) {
             val yOffset = (y + minY) * fullWidth
             for (x in 0 until trimmedWidth step 8) {
@@ -134,7 +217,12 @@ class RawSocketPrintSource constructor() {
         val result = ByteArray(command.size + data.size)
         System.arraycopy(command, 0, result, 0, command.size)
         System.arraycopy(data, 0, result, command.size, data.size)
-
         return result
+    }
+
+    /** Result type for [openJob]. Discriminated so the caller cannot ignore the failure case. */
+    sealed class OpenResult {
+        data class Ok(val session: Session) : OpenResult()
+        data class Failure(val reason: String) : OpenResult()
     }
 }

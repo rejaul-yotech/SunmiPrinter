@@ -59,6 +59,7 @@ class ValtPrinterSdk private constructor(app: Application) {
     private val sdkPrintSource: SdkPrintSource = SdkPrintSource()
     private val rawSocketPrintSource: RawSocketPrintSource = RawSocketPrintSource()
 
+    internal val printerRepository: PrinterRepositoryImpl get() = repository
     private val repository: PrinterRepositoryImpl = PrinterRepositoryImpl(
         context = app,
         sdkPrintSource = sdkPrintSource,

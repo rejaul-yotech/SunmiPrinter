@@ -7,16 +7,16 @@ import com.yotech.valtprinter.core.util.NotificationHelper
 import com.yotech.valtprinter.data.local.dao.PrintDao
 import com.yotech.valtprinter.data.local.datastore.PrinterDataStore
 import com.yotech.valtprinter.data.local.entity.PrintStatus
+import com.yotech.valtprinter.domain.model.ConnectionType
 import com.yotech.valtprinter.domain.model.PrintResult
 import com.yotech.valtprinter.domain.repository.PrinterRepository
 import com.yotech.valtprinter.domain.repository.RenderRepository
 import kotlinx.coroutines.*
 
 /**
- * The "Gold Standard" Queue Engine. 
+ * The "Gold Standard" Queue Engine.
  * Handles priority, state persistence, and hardware resilience.
  */
-
 internal class QueueDispatcher(
     private val context: Context,
     private val printDao: PrintDao,
@@ -36,7 +36,7 @@ internal class QueueDispatcher(
 
     fun start(serviceContext: Context) {
         if (dispatcherJob?.isActive == true) return
-        
+
         // Start monitoring state for Auto-Resume
         startStateMonitoring()
 
@@ -79,34 +79,37 @@ internal class QueueDispatcher(
                     NotificationHelper.updateNotification(serviceContext, logMessage, 1)
 
                     // 4. THE CHUNKED RESILIENT LOOP
-                    // Logic: We render and flush slices. Upon every hardware success, we update the DB.
+                    // Render the FULL receipt once (deterministic, single composition),
+                    // then slice the resulting bitmap and flush each slice. On hardware
+                    // success we update the DB so a mid-job crash can resume from the
+                    // last persisted slice (USB/BT only — LAN forces a full reprint,
+                    // see `isConnectivityLoss` branch below).
                     var currentChunk = nextJob.currentChunkIndex
                     var isFinished = false
                     var lastError: String? = null
+                    var fullReceiptBitmap: android.graphics.Bitmap? = null
 
-                    // Initialize the SDK buffer BEFORE the first chunk.
-                    // This clears any stale commands from a previous incomplete job on USB/BT.
-                    // For LAN this is a no-op (raw socket handles each chunk atomically).
+                    // Initialize the SDK buffer / open the LAN session BEFORE the first chunk.
+                    // This clears any stale commands from a previous incomplete job on USB/BT,
+                    // and opens the single TCP session that the entire LAN job will share.
                     val initResult = printerRepository.initPrintJob()
                     if (initResult is PrintResult.Failure) {
                         lastError = "Buffer init failed: ${initResult.reason}"
                     } else {
-                        while (!isFinished && isActive) {
-                            val captureView = renderRepository.getCaptureView()
-                            if (captureView == null) {
-                                lastError = "Capture View is null. UI not ready for headless rendering."
-                                break
-                            }
-
-                            // Render exactly one slice based on our current persistent index
-                            val bitmapChunk = BitmapRenderer.renderReceiptChunk(
-                                parentView = captureView,
-                                chunkIndex = currentChunk,
-                                chunkSizePx = CHUNK_SIZE_PX
+                        val captureView = renderRepository.getCaptureView()
+                        if (captureView == null) {
+                            lastError = "Capture View is null. UI not ready for headless rendering."
+                        } else {
+                            // ONE composition per job. Same pixels for every slice.
+                            fullReceiptBitmap = BitmapRenderer.renderFullReceiptBitmap(
+                                parentView = captureView
                             ) {
                                 when (printPayload) {
                                     is com.yotech.valtprinter.domain.model.PrintPayload.Billing -> {
-                                        com.yotech.valtprinter.ui.receipt.PosPrintingScreen(data = printPayload.data, isScrollEnabled = true)
+                                        com.yotech.valtprinter.ui.receipt.PosPrintingScreen(
+                                            data = printPayload.data,
+                                            isScrollEnabled = true
+                                        )
                                     }
                                     is com.yotech.valtprinter.domain.model.PrintPayload.KitchenReceipt -> {
                                         com.yotech.valtprinter.ui.receipt.KitchenReceipt(data = printPayload.data)
@@ -120,29 +123,48 @@ internal class QueueDispatcher(
                                 }
                             }
 
-                            if (bitmapChunk == null) {
-                                isFinished = true
-                                break
-                            }
-
-                            // Physical Flush: buffer chunk in SDK (no commit yet for USB/BT)
-                            val result = printerRepository.printChunk(bitmapChunk, isLastChunk = false)
-
-                            if (result is PrintResult.Success) {
-                                currentChunk++
-                                printDao.updateChunkProgress(nextJob.id, currentChunk)
-                                printerDataStore.updateAccumulatedHeight(bitmapChunk.height)
+                            if (fullReceiptBitmap == null) {
+                                lastError = "Composed receipt has zero height — empty payload?"
                             } else {
-                                lastError = (result as PrintResult.Failure).reason
-                                break
+                                while (!isFinished && isActive) {
+                                    val slice = BitmapRenderer.sliceBitmap(
+                                        full = fullReceiptBitmap!!,
+                                        chunkIndex = currentChunk,
+                                        chunkSizePx = CHUNK_SIZE_PX
+                                    )
+                                    if (slice == null) {
+                                        isFinished = true
+                                        break
+                                    }
+
+                                    // Physical Flush: buffer chunk (USB/BT) or stream chunk (LAN).
+                                    // NOTE: do NOT recycle `slice` here — Bitmap.createBitmap(src, x, y, w, h)
+                                    // may share pixel storage with `fullReceiptBitmap` on some platforms,
+                                    // and recycling would corrupt subsequent slices.
+                                    val result = printerRepository.printChunk(slice, isLastChunk = false)
+
+                                    if (result is PrintResult.Success) {
+                                        currentChunk++
+                                        printDao.updateChunkProgress(nextJob.id, currentChunk)
+                                        printerDataStore.updateAccumulatedHeight(slice.height)
+                                    } else {
+                                        lastError = (result as PrintResult.Failure).reason
+                                        break
+                                    }
+                                }
                             }
                         }
                     } // end else (initPrintJob succeeded)
 
+                    // Always release the full-receipt bitmap before leaving the
+                    // job — it can be several megabytes for a long receipt.
+                    fullReceiptBitmap?.recycle()
+                    fullReceiptBitmap = null
+
                     // 5. Finalization (Cut & Status Update)
                     if (isFinished) {
                         // For USB/BT: commitAndCut sends the entire buffered receipt atomically.
-                        // For LAN: no-op (raw socket already sent feed+cut per chunk).
+                        // For LAN: delivers the single feed+cut and closes the TCP session.
                         val cutResult = printerRepository.finalCut()
                         if (cutResult is PrintResult.Success) {
                             // keep isFinished=true and continue to completion branch below
@@ -158,6 +180,16 @@ internal class QueueDispatcher(
                     } else if (isConnectivityLoss(lastError)) {
                         // If transport/session drops (BT power-off, unplug, network break),
                         // keep the job resumable and pause until self-healing reconnects.
+                        //
+                        // LAN exception: a half-sent ESC/POS image cannot be resumed —
+                        // the printer has already advanced through whatever bytes arrived
+                        // before the drop, and the next session must start from chunk 0
+                        // to produce a coherent receipt. USB/BT buffer the entire job in
+                        // the SDK's transaction buffer, so they CAN safely resume from
+                        // the last persisted chunk index.
+                        if (printerRepository.activeConnectionType() == ConnectionType.LAN) {
+                            printDao.updateChunkProgress(nextJob.id, 0)
+                        }
                         printDao.updateStatus(nextJob.id, PrintStatus.INTERRUPTED)
                         NotificationHelper.updateNotification(serviceContext, "Printer offline. Waiting for auto-reconnect...", 1)
                         wasAutoPaused = true

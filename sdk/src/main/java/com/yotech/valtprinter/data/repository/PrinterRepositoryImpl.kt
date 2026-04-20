@@ -72,6 +72,15 @@ class PrinterRepositoryImpl(
     // Monotonic token for connect() attempts; stale callbacks are ignored.
     private var activeConnectAttemptId = 0L
 
+    // Active LAN job session — opened by initPrintJob() for LAN-connected devices,
+    // appended to by printChunk(), closed by finalCut() (success path) or by any
+    // I/O error / disconnect / recovery (failure path).
+    @Volatile private var lanSession: RawSocketPrintSource.Session? = null
+
+    // When promoteToUsb() displaces a non-USB device, the displaced PrinterDevice
+    // is remembered here so that onUsbDetached() can fall back to it.
+    private var preferredFallbackDevice: PrinterDevice? = null
+
     // Real-time Vitality: Heartbeat
     private var heartbeatJob: Job? = null
     private var btConsecutiveMisses = 0
@@ -220,6 +229,8 @@ class PrinterRepositoryImpl(
                 }
                 stopHeartbeat()
                 activeCloudPrinter = null
+                lanSession?.closeQuietly()
+                lanSession = null
                 btConsecutiveMisses = 0
                 val lastDev = connectedDevice ?: device
                 connectedDevice = null
@@ -324,6 +335,8 @@ class PrinterRepositoryImpl(
             Log.w("RESILIENCE_HUB", "Release before recovery failed: ${e.message}")
         }
         activeCloudPrinter = null
+        lanSession?.closeQuietly()
+        lanSession = null
         connectedDevice = null
         reconnectionJob = repositoryScope.launch {
             lastConnectedDevice = device
@@ -486,7 +499,18 @@ class PrinterRepositoryImpl(
         return printMutex.withLock {
             lastPrintActivityMs = System.currentTimeMillis()
             val result = if (device.connectionType == ConnectionType.LAN && device.address.isNotEmpty()) {
-                rawSocketPrintSource.printBitmap(device.address, device.port, bitmap)
+                val session = lanSession
+                if (session == null) {
+                    PrintResult.Failure("LAN session not open — initPrintJob() must run first.")
+                } else {
+                    val r = rawSocketPrintSource.appendChunk(session, bitmap)
+                    if (r is PrintResult.Failure) {
+                        // appendChunk closes on error; drop our reference so the next
+                        // job's initPrintJob() opens a fresh socket.
+                        lanSession = null
+                    }
+                    r
+                }
             } else {
                 sdkPrintSource.printBitmapChunk(printer, bitmap, isLastChunk)
             }
@@ -507,12 +531,23 @@ class PrinterRepositoryImpl(
         val printer = activeCloudPrinter ?: return PrintResult.Failure("Printer null on finalCut")
         val device = connectedDevice
 
-        // For LAN: RawSocketPrintSource already sent the ESC J feed + GS V cut inline,
-        // as part of every printBitmap() call. Sending an additional SDK cut here would
-        // either produce a redundant blank-paper cut or be silently ignored by the printer.
+        // For LAN: deliver the ONE feed-and-cut for this job, then close the socket.
+        // appendChunk() never cuts; commitAndCut() is the single per-job cut point.
         if (device?.connectionType == ConnectionType.LAN && !device.address.isNullOrEmpty()) {
-            Log.d("PRINTER_DEBUG", "finalCut: LAN path — cut already delivered via raw socket.")
-            return PrintResult.Success
+            val session = lanSession
+            return if (session == null) {
+                Log.w("PRINTER_DEBUG", "finalCut: LAN session missing — nothing to cut.")
+                PrintResult.Failure("LAN session missing on finalCut")
+            } else {
+                Log.d("PRINTER_DEBUG", "finalCut: LAN path — committing feed+cut and closing socket.")
+                val r = rawSocketPrintSource.commitAndCut(session)
+                lanSession = null
+                if (r is PrintResult.Success) {
+                    lastSuccessfulPrintCommitMs = System.currentTimeMillis()
+                    lastPrintActivityMs = lastSuccessfulPrintCommitMs
+                }
+                r
+            }
         }
 
         // For USB/BT: All chunks have been buffered in the SDK transaction buffer.
@@ -542,9 +577,20 @@ class PrinterRepositoryImpl(
         val printer = activeCloudPrinter ?: return PrintResult.Failure("Not connected")
         val device = connectedDevice ?: return PrintResult.Failure("No active device")
 
-        // LAN jobs print via raw socket — there is no SDK buffer to initialize.
+        // LAN: open ONE TCP session for the entire job. printChunk appends to it,
+        // finalCut delivers feed+cut and closes it. This is what makes a multi-chunk
+        // LAN receipt produce ONE physical receipt with ONE cut at the bottom.
         if (device.connectionType == ConnectionType.LAN && device.address.isNotEmpty()) {
-            return PrintResult.Success
+            // Defensive: tear down any stale session before opening a new one.
+            lanSession?.closeQuietly()
+            lanSession = null
+            return when (val r = rawSocketPrintSource.openJob(device.address, device.port)) {
+                is RawSocketPrintSource.OpenResult.Ok -> {
+                    lanSession = r.session
+                    PrintResult.Success
+                }
+                is RawSocketPrintSource.OpenResult.Failure -> PrintResult.Failure(r.reason)
+            }
         }
 
         // USB/BT: clear the SDK's internal command buffer before the first chunk.
@@ -772,6 +818,14 @@ class PrinterRepositoryImpl(
 
     override fun disconnect() {
         isManualDisconnect = true
+        // Bump the connect-attempt token so any in-flight ConnectCallback (success
+        // or failure) sees itself as stale and short-circuits. Without this, a USB
+        // promotion that tears down a half-finished BT handshake could be overwritten
+        // by the BT callback firing one frame later.
+        activeConnectAttemptId++
+        // Reset the in-flight guard so a follow-up connect() (e.g. promoteToUsb's
+        // autoConnectUsb after we tore down BT/LAN here) is not blocked.
+        isConnecting = false
         stopHeartbeat()
         reconnectionJob?.cancel()
         isRecovering = false
@@ -779,6 +833,8 @@ class PrinterRepositoryImpl(
         stopScan()
         activeCloudPrinter?.release(context)
         activeCloudPrinter = null
+        lanSession?.closeQuietly()
+        lanSession = null
         connectedDevice = null
         lastConnectedDevice = null
         lastSuccessfulPrintCommitMs = 0L
@@ -786,8 +842,71 @@ class PrinterRepositoryImpl(
         lastPrintActivityMs = 0L
         lastBtConfirmedHitMs = 0L
         btConsecutiveMisses = 0
+        // Note: preferredFallbackDevice is NOT cleared here. promoteToUsb() relies
+        // on saving the fallback into a local before invoking disconnect(); a host-
+        // initiated disconnect followed by a manual reconnect should also not
+        // accidentally reuse the fallback.
+        preferredFallbackDevice = null
         _printerState.value = PrinterState.Idle
         _discoveredDevices.value = emptyList()
         internalPrintersMap.clear()
+    }
+
+    // ───────────────── USB promotion / detach takeover ───────────────
+
+    override fun activeConnectionType(): ConnectionType? = connectedDevice?.connectionType
+
+    override suspend fun promoteToUsb(): Boolean {
+        val currentDev = connectedDevice
+        val usbAlreadyAttached = isUsbPrinterPresent()
+        if (!usbAlreadyAttached) return false
+
+        // Already on USB and the device is still present — nothing to do.
+        if (currentDev?.connectionType == ConnectionType.USB && activeCloudPrinter != null) {
+            return true
+        }
+
+        // Remember the displaced device so onUsbDetached() can fall back to it.
+        if (currentDev != null && currentDev.connectionType != ConnectionType.USB) {
+            preferredFallbackDevice = currentDev
+        }
+
+        if (currentDev != null) {
+            // disconnect() clears preferredFallbackDevice as part of its reset, so
+            // save and restore it across the call.
+            val rememberFallback = preferredFallbackDevice
+            disconnect()
+            // Wait briefly for the state machine to settle to Idle before kicking
+            // off the new USB scan-and-connect.
+            withTimeoutOrNull(250L) {
+                while (isActive && _printerState.value !is PrinterState.Idle) {
+                    delay(20L)
+                }
+            }
+            preferredFallbackDevice = rememberFallback
+            // disconnect() set isManualDisconnect = true so the SDK callback
+            // doesn't trigger recovery; clear it now so the upcoming USB handshake
+            // is treated as a normal connection lifecycle.
+            isManualDisconnect = false
+        }
+
+        _printerState.value = PrinterState.AutoConnecting
+        return autoConnectUsb()
+    }
+
+    override suspend fun onUsbDetached() {
+        val currentDev = connectedDevice ?: return
+        if (currentDev.connectionType != ConnectionType.USB) return
+        val fallback = preferredFallbackDevice
+        disconnect()
+        if (fallback != null) {
+            isManualDisconnect = false
+            preferredFallbackDevice = null
+            requestRecovery(
+                device = fallback,
+                reason = RecoveryReason.SDK_DISCONNECT,
+                details = "USB detached; falling back to ${fallback.connectionType}"
+            )
+        }
     }
 }

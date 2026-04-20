@@ -7,9 +7,11 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.ServiceCompat
+import android.hardware.usb.UsbManager
 import com.yotech.valtprinter.core.util.NotificationHelper
 import com.yotech.valtprinter.data.queue.QueueDispatcher
 import com.yotech.valtprinter.data.receiver.SunmiPrinterReceiver
+import com.yotech.valtprinter.data.receiver.UsbAttachReceiver
 import com.yotech.valtprinter.sdk.ValtPrinterSdk
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -25,6 +27,7 @@ internal class PrinterForegroundService : Service() {
 
     private lateinit var queueDispatcher: QueueDispatcher
     private lateinit var sunmiReceiver: SunmiPrinterReceiver
+    private lateinit var usbAttachReceiver: UsbAttachReceiver
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     override fun onCreate() {
@@ -33,6 +36,7 @@ internal class PrinterForegroundService : Service() {
         val sdk = ValtPrinterSdk.get()
         queueDispatcher = sdk.queueDispatcher
         val printerDataStore = sdk.printerDataStore
+        val printerRepository = sdk.printerRepository
 
         sunmiReceiver = SunmiPrinterReceiver(printerDataStore)
         val filter = IntentFilter().apply {
@@ -50,6 +54,24 @@ internal class PrinterForegroundService : Service() {
         } else {
             @Suppress("UnspecifiedRegisterReceiverFlag")
             registerReceiver(sunmiReceiver, filter)
+        }
+
+        // USB attach/detach takeover lives on the service so it works even when
+        // the host activity is backgrounded. The receiver delegates to the
+        // service scope so promotion does not block onReceive's 10s budget.
+        usbAttachReceiver = UsbAttachReceiver(
+            repository = printerRepository,
+            scope = serviceScope
+        )
+        val usbFilter = IntentFilter().apply {
+            addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED)
+            addAction(UsbManager.ACTION_USB_DEVICE_DETACHED)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(usbAttachReceiver, usbFilter, RECEIVER_EXPORTED)
+        } else {
+            @Suppress("UnspecifiedRegisterReceiverFlag")
+            registerReceiver(usbAttachReceiver, usbFilter)
         }
 
         NotificationHelper.createNotificationChannel(this)
@@ -76,6 +98,7 @@ internal class PrinterForegroundService : Service() {
         queueDispatcher.stop()
         serviceScope.cancel()
         try { unregisterReceiver(sunmiReceiver) } catch (_: Exception) {}
+        try { unregisterReceiver(usbAttachReceiver) } catch (_: Exception) {}
         super.onDestroy()
     }
 
