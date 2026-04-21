@@ -34,10 +34,11 @@ internal class PrintPipeline(
     private val state: ConnectionState get() = coordinator.state
 
     suspend fun initJob(): PrintResult {
-        val printer = state.activeCloudPrinter
-            ?: return PrintResult.Failure("Not connected")
-        val device = state.connectedDevice
-            ?: return PrintResult.Failure("No active device")
+        // Atomic pair read — printer & device are guaranteed to belong to the
+        // same connection epoch.
+        val snap = state.current ?: return PrintResult.Failure("Not connected")
+        val printer = snap.cloudPrinter
+        val device = snap.device
 
         // LAN: open ONE TCP session for the entire job. printChunk appends to it,
         // finalCut delivers feed+cut and closes it. This is what makes a multi-
@@ -62,10 +63,11 @@ internal class PrintPipeline(
     }
 
     suspend fun printChunk(bitmap: Bitmap, isLastChunk: Boolean): PrintResult {
-        val printer = state.activeCloudPrinter
-        val device = state.connectedDevice
-
-        if (printer == null || device == null) {
+        // Single atomic read of the connection pair. Holding `snap` locally
+        // means a concurrent recovery clearing `state.current` mid-print
+        // cannot null one half on us.
+        val snap = state.current
+        if (snap == null) {
             state.lastConnectedDevice?.let {
                 if (!state.isRecovering) {
                     Log.w(
@@ -75,12 +77,14 @@ internal class PrintPipeline(
                     coordinator.requestRecovery(
                         device = it,
                         reason = RecoveryReason.ACTIVE_PRINTER_MISSING,
-                        details = "printChunk called with null activeCloudPrinter/device"
+                        details = "printChunk called with null connection snapshot"
                     )
                 }
             }
             return PrintResult.Failure("Not connected to any printer.")
         }
+        val printer = snap.cloudPrinter
+        val device = snap.device
 
         return printMutex.withLock {
             state.lastPrintActivityMs = System.currentTimeMillis()
@@ -124,13 +128,14 @@ internal class PrintPipeline(
     }
 
     suspend fun finalCut(): PrintResult {
-        val printer = state.activeCloudPrinter
-            ?: return PrintResult.Failure("Printer null on finalCut")
-        val device = state.connectedDevice
+        // Atomic pair read — same epoch for printer + device.
+        val snap = state.current ?: return PrintResult.Failure("Printer null on finalCut")
+        val printer = snap.cloudPrinter
+        val device = snap.device
 
         // LAN: deliver the single feed-and-cut for this job, then close the socket.
         // appendChunk() never cuts; commitAndCut() is the single per-job cut point.
-        if (device?.connectionType == ConnectionType.LAN && !device.address.isNullOrEmpty()) {
+        if (device.connectionType == ConnectionType.LAN && device.address.isNotEmpty()) {
             val session = state.lanSession
             return if (session == null) {
                 Log.w("PRINTER_DEBUG", "finalCut: LAN session missing — nothing to cut.")

@@ -54,8 +54,9 @@ internal class ConnectionController(
                 state.activeRecoveryDeviceId = null
                 state.btConsecutiveMisses = 0
                 state.lastBtConfirmedHitMs = System.currentTimeMillis()
-                state.activeCloudPrinter = cloudPrinter
-                state.connectedDevice = device
+                // Atomic install — readers either see the full pair or the
+                // pre-connect null, never a torn half-state.
+                state.setConnected(cloudPrinter, device)
                 state.lastConnectedDevice = device
                 try {
                     cloudPrinter.setEncodeMode(EncodeType.UTF_8)
@@ -77,7 +78,9 @@ internal class ConnectionController(
                 }
                 state.isConnecting = false
                 // Never let a delayed failure callback overwrite an already-active connection.
-                if (state.connectedDevice?.id == device.id && state.activeCloudPrinter != null) {
+                // Single atomic snapshot read so we evaluate the pair coherently.
+                val snap = state.current
+                if (snap != null && snap.device.id == device.id) {
                     SdkLogger.w(
                         "PRINTER_DEBUG",
                         "Ignoring late onFailed after active connection for ${SdkLogger.redactDeviceId(device.id)}: $err"
@@ -104,12 +107,13 @@ internal class ConnectionController(
                     return
                 }
                 coordinator.stopHeartbeat()
-                state.activeCloudPrinter = null
+                // Atomic clear — record the device that was active for recovery
+                // logging, then null the snapshot in one operation.
+                val priorSnap = state.clearConnection()
                 state.lanSession?.closeQuietly()
                 state.lanSession = null
                 state.btConsecutiveMisses = 0
-                val lastDev = state.connectedDevice ?: device
-                state.connectedDevice = null
+                val lastDev = priorSnap?.device ?: device
 
                 if (!state.isManualDisconnect) {
                     Log.w("PRINTER_DEBUG", "Unexpected Disconnect! Triggering Self-Healing...")
@@ -151,8 +155,10 @@ internal class ConnectionController(
         coordinator.stopHeartbeat()
         scanController.stopAllSearches()
 
+        // Snapshot once so release() and the subsequent reset() can't race.
+        val priorSnap = state.current
         try {
-            state.activeCloudPrinter?.release(context)
+            priorSnap?.cloudPrinter?.release(context)
         } catch (e: Exception) {
             Log.w("PRINTER_DEBUG", "Release during disconnect failed: ${e.message}")
         }

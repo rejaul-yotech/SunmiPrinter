@@ -78,16 +78,17 @@ internal class RecoveryManager(
         state.btConsecutiveMisses = 0
 
         // Force close any stale SDK session before searching/rebinding. Reduces
-        // stale sockets and repeated OS-level re-pair prompts.
+        // stale sockets and repeated OS-level re-pair prompts. Snapshot once,
+        // then atomically clear so a concurrent printChunk() can't observe a
+        // half-cleared connection.
+        val priorSnap = state.clearConnection()
         try {
-            state.activeCloudPrinter?.release(context)
+            priorSnap?.cloudPrinter?.release(context)
         } catch (e: Exception) {
             Log.w("RESILIENCE_HUB", "Release before recovery failed: ${e.message}")
         }
-        state.activeCloudPrinter = null
         state.lanSession?.closeQuietly()
         state.lanSession = null
-        state.connectedDevice = null
 
         reconnectionJob = coordinator.scope.launch {
             state.lastConnectedDevice = device

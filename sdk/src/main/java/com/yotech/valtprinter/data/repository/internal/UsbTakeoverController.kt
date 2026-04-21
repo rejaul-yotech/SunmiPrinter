@@ -40,11 +40,13 @@ internal class UsbTakeoverController(
     }
 
     suspend fun promoteToUsb(): Boolean {
-        val currentDev = state.connectedDevice
+        // Atomic pair read so the "already on USB?" check is coherent.
+        val snap = state.current
+        val currentDev = snap?.device
         if (!isUsbPrinterPresent()) return false
 
         // Already on USB and the device is still present — nothing to do.
-        if (currentDev?.connectionType == ConnectionType.USB && state.activeCloudPrinter != null) {
+        if (snap != null && currentDev?.connectionType == ConnectionType.USB) {
             return true
         }
 
