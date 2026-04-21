@@ -41,6 +41,15 @@ android {
     }
 }
 
+// Tell the Compose compiler to treat the SDK's pure-domain receipt models as
+// stable without forcing them to depend on androidx.compose.runtime. See
+// `compose_stability.conf` for the listed classes and the stability contract.
+composeCompiler {
+    stabilityConfigurationFiles.add(
+        layout.projectDirectory.file("compose_stability.conf")
+    )
+}
+
 afterEvaluate {
     publishing {
         publications {
@@ -48,7 +57,7 @@ afterEvaluate {
                 from(components["release"])
                 groupId    = "com.yotech"
                 artifactId = "valtprinter-sdk"
-                version    = "1.2.1"   // ← bump this every release
+                version    = "1.3.0"   // ← bump this every release
             }
         }
         repositories {
