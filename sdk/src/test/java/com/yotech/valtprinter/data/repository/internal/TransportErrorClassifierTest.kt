@@ -69,6 +69,14 @@ class TransportErrorClassifierTest {
         assertTrue(TransportErrorClassifier.isTransportLoss("CommitCut Error: IO_FAILURE"))
     }
 
+    @Test
+    fun `printer null marker classifies as transport loss`() {
+        // PrintPipeline.finalCut emits "Printer null on finalCut" when the
+        // atomic connection snapshot clears mid-job. Queue dispatcher must
+        // treat this as transport loss and auto-pause, not as a hard failure.
+        assertTrue(TransportErrorClassifier.isTransportLoss("Printer null on finalCut"))
+    }
+
     // --- Case-insensitivity ---------------------------------------------------
 
     @Test

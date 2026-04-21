@@ -7,6 +7,7 @@ import com.yotech.valtprinter.core.util.NotificationHelper
 import com.yotech.valtprinter.data.local.dao.PrintDao
 import com.yotech.valtprinter.data.local.datastore.PrinterDataStore
 import com.yotech.valtprinter.data.local.entity.PrintStatus
+import com.yotech.valtprinter.data.repository.internal.TransportErrorClassifier
 import com.yotech.valtprinter.domain.model.ConnectionType
 import com.yotech.valtprinter.domain.model.PrintResult
 import com.yotech.valtprinter.domain.repository.PrinterRepository
@@ -122,12 +123,16 @@ internal class QueueDispatcher(
                                 }
                             }
 
-                            if (fullReceiptBitmap == null) {
+                            // Capture into a local val so Kotlin can smart-cast through the
+                            // slice loop without an explicit `!!`. `fullReceiptBitmap` is a
+                            // `var` for the later recycle in the outer finally-like block.
+                            val composedBitmap = fullReceiptBitmap
+                            if (composedBitmap == null) {
                                 lastError = "Composed receipt has zero height — empty payload?"
                             } else {
                                 while (!isFinished && isActive) {
                                     val slice = BitmapRenderer.sliceBitmap(
-                                        full = fullReceiptBitmap!!,
+                                        full = composedBitmap,
                                         chunkIndex = currentChunk,
                                         chunkSizePx = CHUNK_SIZE_PX
                                     )
@@ -216,17 +221,14 @@ internal class QueueDispatcher(
         printerDataStore.setPrinterPaused(true)
     }
 
-    private fun isConnectivityLoss(lastError: String?): Boolean {
-        if (lastError.isNullOrBlank()) return false
-        val lower = lastError.lowercase()
-        return lower.contains("not connected")
-                || lower.contains("printer null")
-                || lower.contains("disconnect")
-                || lower.contains("socket")
-                || lower.contains("timeout")
-                || lower.contains("commitcut error")
-                || (lower.contains("unknown") && lower.contains("commit"))
-    }
+    /**
+     * Delegates to [TransportErrorClassifier] — the single source of truth for
+     * classifying print failures as transport loss vs hardware fault. This
+     * used to duplicate the classifier's substring logic; keeping it a thin
+     * alias preserves call-site readability without drifting behaviour.
+     */
+    private fun isConnectivityLoss(lastError: String?): Boolean =
+        TransportErrorClassifier.isTransportLoss(lastError)
 
     private fun startStateMonitoring() {
         stateMonitorJob?.cancel()

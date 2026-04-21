@@ -12,6 +12,8 @@ internal object TransportErrorClassifier {
 
     private val TRANSPORT_LOSS_MARKERS = listOf(
         "not connected",
+        "printer null",      // PrintPipeline emits "Printer null on finalCut" when the
+                             // atomic connection snapshot clears mid-job — transport-lost.
         "disconnect",
         "socket",
         "timeout",
