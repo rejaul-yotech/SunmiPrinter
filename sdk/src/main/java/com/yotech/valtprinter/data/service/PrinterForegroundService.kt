@@ -19,7 +19,10 @@ import kotlinx.coroutines.cancel
 /**
  * Sticky foreground service that hosts the [QueueDispatcher].
  * Kept alive by the OS so print jobs survive activity destruction.
- * Dependencies are resolved from [ValtPrinterSdk] (manual DI — no Hilt).
+ *
+ * Dependencies are resolved via [ValtPrinterSdk.component] — the typed
+ * [com.yotech.valtprinter.sdk.SdkComponent] is the only sanctioned
+ * reach-through path for manifest-declared Android components.
  */
 internal class PrinterForegroundService : Service() {
 
@@ -30,12 +33,12 @@ internal class PrinterForegroundService : Service() {
     override fun onCreate() {
         super.onCreate()
 
-        val sdk = ValtPrinterSdk.get()
-        queueDispatcher = sdk.queueDispatcher
-        val printerDataStore = sdk.printerDataStore
-        val printerRepository = sdk.printerRepository
+        // Single typed reach-through into the SDK. If this throws, the host
+        // app forgot to call ValtPrinterSdk.init() in Application.onCreate().
+        val component = ValtPrinterSdk.component()
+        queueDispatcher = component.queueDispatcher
 
-        sunmiReceiver = SunmiPrinterReceiver(printerDataStore)
+        sunmiReceiver = SunmiPrinterReceiver(component.printerDataStore)
         val filter = IntentFilter().apply {
             addAction("woyou.aidlservice.jiuv5.OUT_OF_PAPER_ACTION")
             addAction("com.sunmi.extprinterservice.OUT_OF_PAPER_ACTION")

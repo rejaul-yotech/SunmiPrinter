@@ -28,7 +28,11 @@ internal class QueueDispatcher(
     private val callbackManager: com.yotech.valtprinter.domain.util.PrinterCallbackManager
 ) {
 
-    val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    // Private: the print loop's scope is an implementation detail. Other SDK
+    // components that need a background scope should use SdkComponent.asyncScope,
+    // which has independent cancellation semantics. Sharing this scope would
+    // entangle USB-attach / state-monitor work with the print-loop lifecycle.
+    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var dispatcherJob: Job? = null
     private var stateMonitorJob: Job? = null
     private val CHUNK_SIZE_PX = 400 // Atomic slice height for persistence
@@ -68,7 +72,13 @@ internal class QueueDispatcher(
                     // 2. Parse Payload safely
                     val printPayload = payloadParser.parse(nextJob.payloadJson)
 
-                    // 3. Mark as Processing
+                    // 3. Mark as Processing. If the pick-up was an INTERRUPTED
+                    // job resuming after transport loss / paper-out, re-emit
+                    // Enqueued so the host's flow collector can distinguish
+                    // "new job starting" from stale Interrupted UI state.
+                    if (nextJob.status == PrintStatus.INTERRUPTED) {
+                        callbackManager.emitEnqueued(nextJob.externalJobId)
+                    }
                     printDao.updateStatus(nextJob.id, PrintStatus.PROCESSING)
 
                     val logMessage = when (printPayload) {
@@ -151,6 +161,15 @@ internal class QueueDispatcher(
                                         currentChunk++
                                         printDao.updateChunkProgress(nextJob.id, currentChunk)
                                         printerDataStore.updateAccumulatedHeight(slice.height)
+                                        // Progress event — host correlates by externalJobId.
+                                        // totalChunks is null because the dispatcher does not
+                                        // pre-compute the total (slices are produced lazily
+                                        // until sliceBitmap returns null).
+                                        callbackManager.emitPrinting(
+                                            externalJobId = nextJob.externalJobId,
+                                            chunkIndex = currentChunk,
+                                            totalChunks = null
+                                        )
                                     } else {
                                         lastError = (result as PrintResult.Failure).reason
                                         break
@@ -196,6 +215,10 @@ internal class QueueDispatcher(
                         }
                         printDao.updateStatus(nextJob.id, PrintStatus.INTERRUPTED)
                         NotificationHelper.updateNotification(serviceContext, "Printer offline. Waiting for auto-reconnect...", 1)
+                        callbackManager.emitInterrupted(
+                            nextJob.externalJobId,
+                            lastError ?: "Transport loss"
+                        )
                         wasAutoPaused = true
                         suspendQueue()
                     } else if (lastError?.contains("Paper Out", ignoreCase = true) == true) {
@@ -203,6 +226,10 @@ internal class QueueDispatcher(
                         printDao.updateChunkProgress(nextJob.id, 0) // Reset progress
                         printDao.updateStatus(nextJob.id, PrintStatus.INTERRUPTED)
                         NotificationHelper.updateNotification(serviceContext, "Paused: Out of Paper", 1)
+                        callbackManager.emitInterrupted(
+                            nextJob.externalJobId,
+                            lastError ?: "Paper out"
+                        )
                         suspendQueue()
                     } else {
                         printDao.updateStatus(nextJob.id, PrintStatus.FAILED)

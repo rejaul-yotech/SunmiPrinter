@@ -6,9 +6,7 @@ import android.content.Intent
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import android.util.Log
-import com.yotech.valtprinter.domain.repository.PrinterRepository
 import com.yotech.valtprinter.sdk.ValtPrinterSdk
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
 /**
@@ -36,6 +34,13 @@ import kotlinx.coroutines.launch
  * long as the foreground service is alive — which is the entire lifetime of the
  * print server.
  *
+ * ## Dependency access
+ *
+ * Manifest-declared receivers cannot use constructor injection (Android
+ * instantiates them via reflection). Dependencies are therefore resolved via
+ * the typed [com.yotech.valtprinter.sdk.SdkComponent], obtained through one
+ * [ValtPrinterSdk.component] call. No direct field-reach-through into the SDK.
+ *
  * ## Filtering
  *
  * The receiver matches Sunmi printers via the same heuristic as
@@ -55,27 +60,28 @@ internal class UsbAttachReceiver : BroadcastReceiver() {
             return
         }
 
-        // Resolve dependencies via SDK singleton for manifest-declared instantiation
-        val sdk = try { ValtPrinterSdk.get() } catch (e: Exception) {
+        // Single typed reach-through into the SDK — see SdkComponent for why
+        // this is the only sanctioned path from manifest-declared receivers.
+        val component = try {
+            ValtPrinterSdk.component()
+        } catch (e: Exception) {
             Log.e(TAG, "SDK not initialized during USB event", e)
             return
         }
-        val repository = sdk.printerRepository
-        val scope = sdk.queueDispatcher.scope
 
         when (intent.action) {
             UsbManager.ACTION_USB_DEVICE_ATTACHED -> {
                 Log.i(TAG, "Sunmi USB printer attached — requesting promotion.")
-                scope.launch {
-                    val ok = repository.promoteToUsb()
+                component.asyncScope.launch {
+                    val ok = component.printerRepository.promoteToUsb()
                     Log.i(TAG, "promoteToUsb result=$ok")
                 }
             }
 
             UsbManager.ACTION_USB_DEVICE_DETACHED -> {
                 Log.i(TAG, "Sunmi USB printer detached — releasing if active.")
-                scope.launch {
-                    repository.onUsbDetached()
+                component.asyncScope.launch {
+                    component.printerRepository.onUsbDetached()
                 }
             }
 

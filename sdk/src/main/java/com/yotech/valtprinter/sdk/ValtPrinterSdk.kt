@@ -27,8 +27,13 @@ import com.yotech.valtprinter.data.worker.CleanupWorker
 import com.yotech.valtprinter.domain.model.PrintPayload
 import com.yotech.valtprinter.domain.model.PrinterDevice
 import com.yotech.valtprinter.domain.model.PrinterState
+import com.yotech.valtprinter.domain.repository.PrinterRepository
 import com.yotech.valtprinter.domain.util.PayloadParser
 import com.yotech.valtprinter.domain.util.PrinterCallbackManager
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import java.util.concurrent.TimeUnit
 
@@ -59,7 +64,12 @@ class ValtPrinterSdk private constructor(app: Application) {
     private val sdkPrintSource: SdkPrintSource = SdkPrintSource()
     private val rawSocketPrintSource: RawSocketPrintSource = RawSocketPrintSource()
 
-    internal val printerRepository: PrinterRepositoryImpl get() = repository
+    /**
+     * Exposed as the composite [PrinterRepository] interface — not the concrete
+     * impl. Manifest-declared components resolve this via [component] and MUST
+     * NOT downcast. See [SdkComponent] for the reach-through contract.
+     */
+    internal val printerRepository: PrinterRepository get() = repository
     private val repository: PrinterRepositoryImpl = PrinterRepositoryImpl(
         context = app,
         sdkPrintSource = sdkPrintSource,
@@ -69,6 +79,14 @@ class ValtPrinterSdk private constructor(app: Application) {
 
     private val callbackManager: PrinterCallbackManager = PrinterCallbackManager()
     private val payloadParser: PayloadParser = PayloadParser(Gson())
+
+    /**
+     * Supervisor scope for fire-and-forget work started from manifest-declared
+     * components (broadcast receivers, service callbacks). Rooted at the SDK
+     * singleton — lives for the lifetime of the process. Intentionally
+     * separate from [QueueDispatcher]'s scope; see [SdkComponent].
+     */
+    private val asyncScope: CoroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     internal val queueDispatcher: QueueDispatcher = QueueDispatcher(
         context = app,
@@ -92,6 +110,17 @@ class ValtPrinterSdk private constructor(app: Application) {
 
     /** Discovered printers during an active scan. */
     val discoveredDevices: StateFlow<List<PrinterDevice>> = repository.discoveredDevices
+
+    /**
+     * Per-job lifecycle event stream. Hosts correlate by [JobEvent.externalJobId]
+     * to drive UI for a specific order (e.g. order-card progress/failure state)
+     * independent of other jobs in flight.
+     *
+     * Hot, `replay = 0` — see [JobEvent] for the full state machine and
+     * delivery semantics. [PrintJobCallback] is the simpler alternative for
+     * hosts that only need terminal outcomes.
+     */
+    val jobEvents: SharedFlow<JobEvent> = callbackManager.jobEvents
 
     // ── Discovery & connection ───────────────────────────────────────────────
 
@@ -167,8 +196,15 @@ class ValtPrinterSdk private constructor(app: Application) {
                 isPriority = isPriority
             )
             val rowId = printDao.insertPrintJob(entity)
-            if (rowId == -1L) SubmitResult.Duplicate(externalJobId)
-            else SubmitResult.Enqueued(externalJobId)
+            if (rowId == -1L) {
+                SubmitResult.Duplicate(externalJobId)
+            } else {
+                // Mirror the queue-row insertion into the JobEvent stream so
+                // hosts observing [jobEvents] see the full lifecycle from the
+                // moment of acceptance, without having to poll Room.
+                callbackManager.emitEnqueued(externalJobId)
+                SubmitResult.Enqueued(externalJobId)
+            }
         } catch (ce: kotlinx.coroutines.CancellationException) {
             throw ce
         } catch (t: Throwable) {
@@ -215,6 +251,23 @@ class ValtPrinterSdk private constructor(app: Application) {
          */
         fun get(): ValtPrinterSdk =
             instance ?: error("ValtPrinterSdk not initialised. Call ValtPrinterSdk.init(app) in Application.onCreate().")
+
+        /**
+         * Typed dependency bag for manifest-instantiated Android components.
+         * This is the **only** reach-through into the SDK allowed from
+         * broadcast receivers and services. See [SdkComponent] for rationale.
+         *
+         * @throws IllegalStateException if [init] was not called first.
+         */
+        internal fun component(): SdkComponent {
+            val sdk = get()
+            return SdkComponent(
+                printerRepository = sdk.printerRepository,
+                queueDispatcher = sdk.queueDispatcher,
+                printerDataStore = sdk.printerDataStore,
+                asyncScope = sdk.asyncScope
+            )
+        }
     }
 
     private fun startForegroundService(context: Context) {
