@@ -36,6 +36,14 @@ android {
         compose = true
     }
 
+    // PayloadParser (and a few other main-source classes) call android.util.Log.
+    // Under pure-JVM unit tests those symbols are stubs and would NPE. Returning
+    // default values turns them into no-ops so we can unit-test the parse/serialize
+    // contract without pulling in Robolectric.
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
+
     publishing {
         singleVariant("release") { withSourcesJar() }
     }
@@ -57,7 +65,7 @@ afterEvaluate {
                 from(components["release"])
                 groupId    = "com.yotech"
                 artifactId = "valtprinter-sdk"
-                version    = "1.3.0"   // ← bump this every release
+                version    = "1.3.1"   // ← bump this every release
             }
         }
         repositories {
