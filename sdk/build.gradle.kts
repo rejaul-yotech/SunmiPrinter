@@ -65,7 +65,7 @@ afterEvaluate {
                 from(components["release"])
                 groupId    = "com.yotech"
                 artifactId = "valtprinter-sdk"
-                version    = "1.3.6"   // ← bump this every release
+                version    = "1.3.7"   // ← bump this every release
             }
         }
         repositories {
