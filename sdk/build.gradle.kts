@@ -65,7 +65,7 @@ afterEvaluate {
                 from(components["release"])
                 groupId    = "com.yotech"
                 artifactId = "valtprinter-sdk"
-                version    = "1.3.5"   // ← bump this every release
+                version    = "1.3.6"   // ← bump this every release
             }
         }
         repositories {
@@ -108,6 +108,7 @@ dependencies {
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.mockk)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
 }
