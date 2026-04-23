@@ -4,6 +4,17 @@ package com.yotech.valtprinter.domain.model.orderdata
  * The primary data contract for the Valt KD billing and printing system.
  * Example: Dishoom Kensington, 4 Derry St, LONDON W8 5SE, UK.
  *
+ * ## Compose stability
+ *
+ * Declared stable for Compose in `sdk/compose_stability.conf` (no `@Immutable`
+ * annotation here on purpose — the domain layer must not depend on
+ * `androidx.compose.runtime`). The contract is enforced by
+ * `ComposeStabilityContractTest`: every property MUST be `val` and MUST have
+ * a stable type (primitive, [String], [Boolean], or another listed class, or
+ * `List<stable>`). Adding a `var` field or a custom mutable type to this
+ * class without updating the conf file will cause silent stale-UI bugs in the
+ * receipt preview.
+ *
  * ## Why no logo field
  *
  * This model crosses a JSON serialization boundary (the print job is persisted to

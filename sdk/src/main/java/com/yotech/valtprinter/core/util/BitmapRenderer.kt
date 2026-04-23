@@ -95,7 +95,7 @@ object BitmapRenderer {
     /**
      * Attaches the [content] to the window, waits for composition + layout to
      * settle (one pre-draw + one extra frame), then measures and lays it out to
-     * a definite 576-px width.
+     * a definite [PRINTER_PAPER_WIDTH_PX]-px width.
      */
     private suspend fun composeAndLayout(
         parentView: View,
@@ -105,7 +105,10 @@ object BitmapRenderer {
             setViewTreeLifecycleOwner(parentView.findViewTreeLifecycleOwner())
             setViewTreeViewModelStoreOwner(parentView.findViewTreeViewModelStoreOwner())
             setViewTreeSavedStateRegistryOwner(parentView.findViewTreeSavedStateRegistryOwner())
-            layoutParams = ViewGroup.LayoutParams(576, ViewGroup.LayoutParams.WRAP_CONTENT)
+            layoutParams = ViewGroup.LayoutParams(
+                PRINTER_PAPER_WIDTH_PX,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
             setContent {
                 androidx.compose.runtime.CompositionLocalProvider(
                     androidx.compose.ui.platform.LocalDensity provides
@@ -137,7 +140,10 @@ object BitmapRenderer {
         awaitPreDraw(view)
         awaitFrame()
 
-        val widthSpec = View.MeasureSpec.makeMeasureSpec(576, View.MeasureSpec.EXACTLY)
+        val widthSpec = View.MeasureSpec.makeMeasureSpec(
+            PRINTER_PAPER_WIDTH_PX,
+            View.MeasureSpec.EXACTLY
+        )
         val heightSpec = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
         view.measure(widthSpec, heightSpec)
         val w = view.measuredWidth
@@ -218,7 +224,7 @@ object BitmapRenderer {
         content: @Composable () -> Unit
     ): Bitmap {
         return renderFullReceiptBitmap(parentView, content)
-            ?: Bitmap.createBitmap(576, 1, Bitmap.Config.ARGB_8888).apply {
+            ?: Bitmap.createBitmap(PRINTER_PAPER_WIDTH_PX, 1, Bitmap.Config.ARGB_8888).apply {
                 eraseColor(android.graphics.Color.WHITE)
             }
     }

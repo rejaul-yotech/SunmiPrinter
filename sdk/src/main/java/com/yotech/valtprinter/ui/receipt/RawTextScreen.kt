@@ -13,6 +13,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+/**
+ * Raw-text fallback receipt. Inherits its width from the parent ComposeView
+ * that [com.yotech.valtprinter.core.util.BitmapRenderer] installs at
+ * [com.yotech.valtprinter.core.util.PRINTER_PAPER_WIDTH_DP]. Do NOT
+ * reintroduce a hardcoded `.width(...)` here — fillMaxWidth() is the
+ * intentional contract.
+ */
 @Composable
 fun RawTextScreen(text: String) {
     Column(

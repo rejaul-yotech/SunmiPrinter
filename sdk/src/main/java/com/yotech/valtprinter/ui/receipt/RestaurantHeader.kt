@@ -27,6 +27,13 @@ import com.yotech.valtprinter.domain.model.orderdata.BillingData
 import com.yotech.valtprinter.domain.model.orderdata.OrderItem
 import com.yotech.valtprinter.domain.model.orderdata.SubOrderItem
 
+/**
+ * Restaurant-branding header rendered at the top of every billing receipt.
+ * Inherits its width from the parent (`PosPrintingScreen`'s 576dp Column,
+ * see [com.yotech.valtprinter.core.util.PRINTER_PAPER_WIDTH_DP]). Do NOT
+ * reintroduce a hardcoded `.width(...)` here — `fillMaxWidth()` is the
+ * intentional contract.
+ */
 @Composable
 fun RestaurantHeader(
     modifier: Modifier = Modifier,

@@ -1,6 +1,7 @@
 package com.yotech.valtprinter.ui.receipt
 
 import android.annotation.SuppressLint
+import com.yotech.valtprinter.core.util.PRINTER_PAPER_WIDTH_DP
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -38,6 +39,10 @@ import java.util.Locale
  * constraints throws `IllegalStateException`. Hosts that want to preview the
  * receipt on screen should wrap this composable in their own scrolling
  * container at the call site.
+ *
+ * **Width contract:** locked to [PRINTER_PAPER_WIDTH_DP] (576dp / 576px @
+ * density 1.0). Do NOT change the `.width(...)` call below to a different
+ * literal — see the KDoc on [PRINTER_PAPER_WIDTH_PX] for why.
  */
 @Composable
 fun PosPrintingScreen(
@@ -58,7 +63,7 @@ fun PosPrintingScreen(
 
     Column(
         modifier = Modifier
-            .width(576.dp)
+            .width(PRINTER_PAPER_WIDTH_DP)
             .background(Color.White)
             .padding(vertical = 24.dp, horizontal = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally

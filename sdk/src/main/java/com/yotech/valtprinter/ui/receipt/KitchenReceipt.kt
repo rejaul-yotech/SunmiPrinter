@@ -1,5 +1,6 @@
 package com.yotech.valtprinter.ui.receipt
 
+import com.yotech.valtprinter.core.util.PRINTER_PAPER_WIDTH_DP
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -25,15 +26,20 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.yotech.valtprinter.domain.model.ReceiptData
 
+/**
+ * Kitchen-ticket receipt composable, rendered headless by [BitmapRenderer].
+ *
+ * **Width contract:** locked to [PRINTER_PAPER_WIDTH_DP] — the same single
+ * source of truth that [BitmapRenderer] uses for the off-screen capture and
+ * that [PosPrintingScreen] / [RestaurantHeader] / [RawTextScreen] inherit.
+ * Do NOT swap to a different literal — drift between this width and the
+ * capture width silently corrupts the print output.
+ */
 @Composable
 fun KitchenReceipt(data: ReceiptData) {
-    // This Column is the actual "Paper" area. Width must be exactly 576 pixels for 80mm printer.
-    // In Compose, dp is usually translated to pixels based on density.
-    // However, our BitmapRenderer forces the view to be exactly 576 pixels wide.
-    // So the width modifier here should just match what looks good in preview.
     Column(
         modifier = Modifier
-            .width(576.dp)
+            .width(PRINTER_PAPER_WIDTH_DP)
             .background(Color.White),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
